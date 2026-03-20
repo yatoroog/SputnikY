@@ -1,0 +1,292 @@
+'use client';
+
+import { useEffect, useRef, useCallback, useState } from 'react';
+import type { Satellite } from '@/types';
+import { useSatelliteStore } from '@/store/satelliteStore';
+import { isRenderableAltitudeKm } from '@/lib/utils';
+import { fetchOrbit } from '@/lib/api';
+
+/* ── orbit-type palette (matches CesiumGlobe) ───────────── */
+
+function getOrbitColor(orbitType: string) {
+  switch (orbitType?.toUpperCase()) {
+    case 'LEO':
+      return '#22d3ee';
+    case 'MEO':
+      return '#60a5fa';
+    case 'GEO':
+      return '#fbbf24';
+    case 'HEO':
+      return '#f87171';
+    default:
+      return '#94a3b8';
+  }
+}
+
+/* ── 2GIS type stubs ─────────────────────────────────────── */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DGMap = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DGMarker = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DGPolyline = any;
+
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    DG?: any;
+  }
+}
+
+/* ── helpers ─────────────────────────────────────────────── */
+
+interface Map2DProps {
+  satellites: Satellite[];
+  selectedSatellite: Satellite | null;
+}
+
+function hasRenderableCoords(lat: number, lng: number, altKm: number) {
+  return (
+    Number.isFinite(lat) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    Number.isFinite(lng) &&
+    lng >= -180 &&
+    lng <= 180 &&
+    isRenderableAltitudeKm(altKm)
+  );
+}
+
+function makeDotIcon(
+  DG: NonNullable<typeof window.DG>,
+  color: string,
+  isSelected: boolean
+) {
+  const size = isSelected ? 14 : 8;
+  const borderW = isSelected ? 2 : 1;
+  const border = isSelected ? '#fff' : color;
+  const shadow = isSelected ? `0 0 14px ${color}` : `0 0 4px ${color}80`;
+  return DG.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;
+      background:${color};
+      border-radius:50%;
+      border:${borderW}px solid ${border};
+      box-shadow:${shadow};
+      pointer-events:auto;cursor:pointer;
+    "></div>`,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+/* ── component ───────────────────────────────────────────── */
+
+export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
+  const mapRef = useRef<DGMap | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const markersRef = useRef<Map<string, DGMarker>>(new Map());
+  const orbitLinesRef = useRef<DGPolyline[]>([]);
+  const satellitesRef = useRef<Satellite[]>(satellites);
+  const prevSelectedIdRef = useRef<string | null>(null);
+
+  const [mapReady, setMapReady] = useState(false);
+
+  const positions = useSatelliteStore((state) => state.positions);
+  const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
+  satellitesRef.current = satellites;
+
+  /* ── load 2GIS script ──────────────────────────────────── */
+
+  const loadDGScript = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      if (window.DG) {
+        resolve();
+        return;
+      }
+      const existing = document.querySelector('script[src*="maps.api.2gis.ru"]');
+      if (existing) {
+        const check = setInterval(() => {
+          if (window.DG) { clearInterval(check); resolve(); }
+        }, 100);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://maps.api.2gis.ru/2.0/loader.js?pkg=full';
+      script.async = true;
+      script.onload = () => {
+        const check = setInterval(() => {
+          if (window.DG) { clearInterval(check); resolve(); }
+        }, 100);
+      };
+      document.head.appendChild(script);
+    });
+  }, []);
+
+  /* ── init map ──────────────────────────────────────────── */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      await loadDGScript();
+      if (cancelled || !containerRef.current || !window.DG) return;
+
+      window.DG.then(() => {
+        if (cancelled || !containerRef.current || !window.DG) return;
+
+        const map = window.DG.map(containerRef.current, {
+          center: [30, 60],
+          zoom: 3,
+          scrollWheelZoom: true,
+          zoomControl: true,
+        });
+
+        mapRef.current = map;
+        setMapReady(true);
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      orbitLinesRef.current.forEach((l) => { try { l.remove(); } catch {} });
+      orbitLinesRef.current = [];
+      markersRef.current.forEach((m) => { try { m.remove(); } catch {} });
+      markersRef.current.clear();
+      if (mapRef.current) {
+        try { mapRef.current.remove(); } catch {}
+        mapRef.current = null;
+      }
+      setMapReady(false);
+    };
+  }, [loadDGScript]);
+
+  /* ── update markers ────────────────────────────────────── */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const DG = window.DG;
+    if (!map || !DG || !mapReady) return;
+
+    const currentIds = new Set(satellites.map((s) => s.id));
+    const selId = selectedSatellite?.id ?? null;
+    const prevSelId = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selId;
+
+    // Remove stale markers
+    markersRef.current.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
+    });
+
+    // IDs that need icon refresh (selection changed)
+    const needsIconRefresh = new Set<string>();
+    if (prevSelId && prevSelId !== selId) needsIconRefresh.add(prevSelId);
+    if (selId && selId !== prevSelId) needsIconRefresh.add(selId);
+
+    for (const sat of satellites) {
+      const pos = positions.get(sat.id);
+      const lat = pos?.lat ?? sat.latitude;
+      const lng = pos?.lng ?? sat.longitude;
+      const altKm = pos?.alt ?? sat.altitude;
+
+      if (!hasRenderableCoords(lat, lng, altKm)) continue;
+
+      const color = getOrbitColor(sat.orbitType);
+      const isSelected = selId === sat.id;
+      const existing = markersRef.current.get(sat.id);
+
+      if (existing) {
+        existing.setLatLng([lat, lng]);
+        // Refresh icon if selection state changed
+        if (needsIconRefresh.has(sat.id)) {
+          existing.setIcon(makeDotIcon(DG, color, isSelected));
+        }
+      } else {
+        const icon = makeDotIcon(DG, color, isSelected);
+        const marker = DG.marker([lat, lng], { icon }).addTo(map);
+        marker.bindPopup(
+          `<b>${sat.name}</b><br>` +
+            `<small>${sat.orbitType} | ${altKm.toFixed(1)} km | NORAD ${sat.noradId}</small>`
+        );
+        const satId = sat.id;
+        marker.on('click', () => {
+          const s = satellitesRef.current.find((item: Satellite) => item.id === satId);
+          if (s) selectSatellite(s);
+        });
+        markersRef.current.set(sat.id, marker);
+      }
+    }
+  }, [satellites, positions, selectedSatellite, selectSatellite, mapReady]);
+
+  /* ── orbit path ────────────────────────────────────────── */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const DG = window.DG;
+    if (!map || !DG || !mapReady) return;
+
+    // Remove old orbit lines
+    orbitLinesRef.current.forEach((l) => { try { l.remove(); } catch {} });
+    orbitLinesRef.current = [];
+
+    if (!selectedSatellite) return;
+    if (!isRenderableAltitudeKm(selectedSatellite.altitude)) return;
+
+    let cancelled = false;
+    const color = getOrbitColor(selectedSatellite.orbitType);
+
+    (async () => {
+      try {
+        const orbitData = await fetchOrbit(selectedSatellite.id, 2);
+        if (cancelled || !mapRef.current) return;
+        if (!orbitData || orbitData.length < 2) return;
+
+        const orbitPoints: [number, number][] = orbitData.map((pt) => [pt.lat, pt.lng]);
+
+        // Split at antimeridian crossings
+        const segments: [number, number][][] = [];
+        let current: [number, number][] = [];
+
+        for (let i = 0; i < orbitPoints.length; i++) {
+          const pt = orbitPoints[i];
+          if (current.length > 0) {
+            const prev = current[current.length - 1];
+            if (Math.abs(pt[1] - prev[1]) > 180) {
+              segments.push(current);
+              current = [];
+            }
+          }
+          current.push(pt);
+        }
+        if (current.length > 0) segments.push(current);
+
+        for (const seg of segments) {
+          const line = DG.polyline(seg, {
+            color,
+            weight: 1.5,
+            opacity: 0.5,
+            dashArray: '6,4',
+          }).addTo(map);
+          orbitLinesRef.current.push(line);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch orbit for 2D map:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedSatellite, mapReady]);
+
+  /* ── render ─────────────────────────────────────────────── */
+
+  return (
+    <div className="relative w-full h-full" style={{ background: '#0a1628' }}>
+      <div ref={containerRef} className="absolute inset-0" />
+    </div>
+  );
+}

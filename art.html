@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2GIS — только карта + спутники</title>
+    <script src="https://maps.api.2gis.ru/2.0/loader.js?pkg=full"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.1.2/satellite.min.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        html, body { height:100%; overflow:hidden; background:#03050b; }
+        #map { width:100%; height:100%; }
+        .sat-marker {
+            width: 24px;
+            height: 24px;
+            background: radial-gradient(circle at 30% 30%, #44aaff, #0066cc);
+            border-radius: 50%;
+            border: 2px solid #88ddff;
+            box-shadow: 0 0 10px #00aaff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: white;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+// ────────────────────────────────────────────────
+// Минимальный набор TLE (можно заменить / дополнить)
+const tleData = [
+    { name: "ISS (ZARYA)",          tle1: "1 25544U 98067A   25123.86543210  .00016789  00000-0  10270-4 0  9999", tle2: "2 25544  51.6425 210.9876 0005678 112.3456 247.8901 15.49123456012345" },
+    { name: "STARLINK-1007",        tle1: "1 44917U 20001AL  25123.45678901  .00000123  00000-0  00000-0 0  9999", tle2: "2 44917  53.0545  45.6789 0001234  89.1234 270.9876 15.06345678012345" },
+    { name: "STARLINK-3045",        tle1: "1 48247U 21041Y   25123.51234012  .00000089  00000-0  00000-0 0  9991", tle2: "2 48247  53.0543  67.8901 0001500 100.2345 259.8765 15.06352345012345" },
+    // добавь сюда свои реальные TLE
+];
+
+// ────────────────────────────────────────────────
+let map = null;
+const markers = {};
+let satrecs = {};
+
+function initMap() {
+    map = DG.map('map', {
+        center: [55.75, 37.62],   // Москва по умолчанию — поменяй
+        zoom: 3,
+        scrollWheelZoom: true,
+        zoomControl: false,       // можно включить true
+        style: 'dark'
+    });
+
+    // Если темная тема не применилась автоматически:
+    DG.tileLayer('https://tiles2.maps.2gis.com/tiles?x={x}&y={y}&z={z}&type=base&version=2&style=dark', {
+        attribution: '',
+        subdomains: ['a','b','c','d']
+    }).addTo(map);
+
+    // Парсим TLE один раз при старте
+    tleData.forEach(item => {
+        try {
+            const satrec = satellite.twoline2satrec(item.tle1, item.tle2);
+            satrecs[item.name] = { satrec, name: item.name };
+        } catch(e) {
+            console.warn("Ошибка TLE:", item.name);
+        }
+    });
+
+    // Запускаем обновление позиций
+    setInterval(updatePositions, 1800);   // ~ каждые 1.8 сек
+    updatePositions();                    // сразу
+}
+
+function getCurrentPosition(satrec) {
+    const now = new Date();
+    const gmst = satellite.gstime(now);
+    const pos = satellite.propagate(satrec, now);
+    if (!pos.position) return null;
+
+    const gd = satellite.eciToGeodetic(pos.position, gmst);
+    return {
+        lat: gd.latitude  * 180 / Math.PI,
+        lng: gd.longitude * 180 / Math.PI,
+        height: gd.height
+    };
+}
+
+function createMarker(name) {
+    const html = `<div class="sat-marker">🛰</div>`;
+    const icon = DG.divIcon({
+        html: html,
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -14]
+    });
+
+    const marker = DG.marker([0,0], { icon }).addTo(map);
+    
+    marker.bindPopup(`
+        <b>${name}</b><br>
+        <small>позиция обновляется в реальном времени</small>
+    `);
+
+    return marker;
+}
+
+function updatePositions() {
+    Object.values(satrecs).forEach(s => {
+        const pos = getCurrentPosition(s.satrec);
+        if (!pos) return;
+
+        if (!markers[s.name]) {
+            markers[s.name] = createMarker(s.name);
+        }
+
+        markers[s.name].setLatLng([pos.lat, pos.lng]);
+    });
+}
+
+// Запуск
+DG.then(initMap);
+</script>
+</body>
+</html>
