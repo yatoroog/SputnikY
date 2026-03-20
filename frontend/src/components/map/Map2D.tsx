@@ -6,6 +6,8 @@ import { useSatelliteStore } from '@/store/satelliteStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
 
+const EARTH_RADIUS_KM = 6_371;
+
 /* ── orbit-type palette (matches CesiumGlobe) ───────────── */
 
 function getOrbitColor(orbitType: string) {
@@ -31,6 +33,8 @@ type DGMap = any;
 type DGMarker = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DGPolyline = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DGCircle = any;
 
 declare global {
   interface Window {
@@ -89,6 +93,8 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<Map<string, DGMarker>>(new Map());
   const orbitLinesRef = useRef<DGPolyline[]>([]);
+  const coverageCircleRef = useRef<DGCircle | null>(null);
+  const clickedMarkerRef = useRef<DGMarker | null>(null);
   const satellitesRef = useRef<Satellite[]>(satellites);
   const prevSelectedIdRef = useRef<string | null>(null);
 
@@ -96,6 +102,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
   const positions = useSatelliteStore((state) => state.positions);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
+  const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   satellitesRef.current = satellites;
 
   /* ── load 2GIS script ──────────────────────────────────── */
@@ -144,6 +151,11 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
           zoomControl: true,
         });
 
+        // Click on empty area
+        map.on('click', (e: { latlng: { lat: number; lng: number } }) => {
+          setClickedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
+        });
+
         mapRef.current = map;
         setMapReady(true);
       });
@@ -155,13 +167,15 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       orbitLinesRef.current = [];
       markersRef.current.forEach((m) => { try { m.remove(); } catch {} });
       markersRef.current.clear();
+      if (coverageCircleRef.current) { try { coverageCircleRef.current.remove(); } catch {} }
+      if (clickedMarkerRef.current) { try { clickedMarkerRef.current.remove(); } catch {} }
       if (mapRef.current) {
         try { mapRef.current.remove(); } catch {}
         mapRef.current = null;
       }
       setMapReady(false);
     };
-  }, [loadDGScript]);
+  }, [loadDGScript, setClickedLocation]);
 
   /* ── update markers ────────────────────────────────────── */
 
@@ -214,7 +228,8 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
             `<small>${sat.orbitType} | ${altKm.toFixed(1)} km | NORAD ${sat.noradId}</small>`
         );
         const satId = sat.id;
-        marker.on('click', () => {
+        marker.on('click', (e: { originalEvent?: { stopPropagation?: () => void } }) => {
+          if (e.originalEvent?.stopPropagation) e.originalEvent.stopPropagation();
           const s = satellitesRef.current.find((item: Satellite) => item.id === satId);
           if (s) selectSatellite(s);
         });
@@ -222,6 +237,77 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       }
     }
   }, [satellites, positions, selectedSatellite, selectSatellite, mapReady]);
+
+  /* ── coverage zone ───────────────────────────────────────── */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const DG = window.DG;
+    if (!map || !DG || !mapReady) return;
+
+    if (coverageCircleRef.current) {
+      try { coverageCircleRef.current.remove(); } catch {}
+      coverageCircleRef.current = null;
+    }
+
+    if (!selectedSatellite) return;
+
+    const pos = positions.get(selectedSatellite.id);
+    const lat = pos?.lat ?? selectedSatellite.latitude;
+    const lng = pos?.lng ?? selectedSatellite.longitude;
+    const altKm = pos?.alt ?? selectedSatellite.altitude;
+
+    if (!hasRenderableCoords(lat, lng, altKm)) return;
+
+    const halfAngle = Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
+    const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
+    const color = getOrbitColor(selectedSatellite.orbitType);
+
+    coverageCircleRef.current = DG.circle([lat, lng], {
+      radius: groundRadiusMeters,
+      color: color,
+      weight: 1.5,
+      opacity: 0.4,
+      fillColor: color,
+      fillOpacity: 0.08,
+    }).addTo(map);
+  }, [selectedSatellite, positions, mapReady]);
+
+  /* ── clicked location marker ──────────────────────────── */
+
+  useEffect(() => {
+    const unsub = useSatelliteStore.subscribe((state, prev) => {
+      if (state.clickedLocation !== prev.clickedLocation) {
+        const map = mapRef.current;
+        const DG = window.DG;
+        if (!map || !DG) return;
+
+        if (clickedMarkerRef.current) {
+          try { clickedMarkerRef.current.remove(); } catch {}
+          clickedMarkerRef.current = null;
+        }
+
+        const loc = state.clickedLocation;
+        if (!loc) return;
+
+        const icon = DG.divIcon({
+          html: `<div style="
+            width:12px;height:12px;
+            background:#f59e0b;
+            border-radius:50%;
+            border:2px solid #fff;
+            box-shadow:0 0 10px #f59e0b80;
+          "></div>`,
+          className: '',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6],
+        });
+
+        clickedMarkerRef.current = DG.marker([loc.lat, loc.lng], { icon }).addTo(map);
+      }
+    });
+    return unsub;
+  }, []);
 
   /* ── orbit path ────────────────────────────────────────── */
 

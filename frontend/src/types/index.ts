@@ -37,6 +37,16 @@ export interface Pass {
   duration: number;
 }
 
+export interface AreaPass {
+  satelliteId: string;
+  satelliteName: string;
+  orbitType: string;
+  aos: number;
+  los: number;
+  maxElevation: number;
+  duration: number;
+}
+
 export interface WSMessage {
   type: string;
   data: unknown;

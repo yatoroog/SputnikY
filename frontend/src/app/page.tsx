@@ -7,6 +7,7 @@ import { useSatellites } from '@/hooks/useSatellites';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import Sidebar from '@/components/ui/Sidebar';
 import SatelliteCard from '@/components/ui/SatelliteCard';
+import AreaPassesPanel from '@/components/ui/AreaPassesPanel';
 import TimelineControl from '@/components/ui/TimelineControl';
 
 const CesiumGlobe = dynamic(() => import('@/components/map/CesiumGlobe'), {
@@ -42,6 +43,7 @@ type ViewMode = '3d' | '2d';
 export default function HomePage() {
   const satellites = useSatelliteStore((state) => state.satellites);
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
+  const clickedLocation = useSatelliteStore((state) => state.clickedLocation);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
 
   useSatellites();
@@ -93,6 +95,13 @@ export default function HomePage() {
       {selectedSatellite && (
         <div className="absolute top-4 right-4 bottom-20 z-10">
           <SatelliteCard />
+        </div>
+      )}
+
+      {/* Right area passes panel */}
+      {!selectedSatellite && clickedLocation && (
+        <div className="absolute top-4 right-4 bottom-20 z-10">
+          <AreaPassesPanel />
         </div>
       )}
 

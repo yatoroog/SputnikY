@@ -1,4 +1,4 @@
-import type { Satellite, OrbitPoint, Pass, FilterParams } from '@/types';
+import type { Satellite, OrbitPoint, Pass, AreaPass, FilterParams } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -158,6 +158,40 @@ export async function fetchPasses(
   const passes = Array.isArray(data) ? data : data.passes;
 
   return passes.map(normalizePass);
+}
+
+type AreaPassWire = {
+  satellite_id?: string;
+  satellite_name?: string;
+  orbit_type?: string;
+  aos?: number;
+  los?: number;
+  max_elevation?: number;
+  duration?: number;
+};
+
+type AreaPassesResponse = {
+  observer: { lat: number; lng: number };
+  hours: number;
+  passes: AreaPassWire[];
+};
+
+export async function fetchAreaPasses(lat: number, lng: number, hours: number = 6): Promise<AreaPass[]> {
+  const data = await request<AreaPassesResponse | AreaPassWire[]>(
+    `/api/passes/area?lat=${lat}&lng=${lng}&hours=${hours}`
+  );
+
+  const passes = Array.isArray(data) ? data : data.passes;
+
+  return passes.map((p) => ({
+    satelliteId: p.satellite_id ?? '',
+    satelliteName: p.satellite_name ?? '',
+    orbitType: p.orbit_type ?? '',
+    aos: p.aos ?? 0,
+    los: p.los ?? 0,
+    maxElevation: p.max_elevation ?? 0,
+    duration: p.duration ?? 0,
+  }));
 }
 
 export async function uploadTLE(file: File): Promise<Satellite[]> {

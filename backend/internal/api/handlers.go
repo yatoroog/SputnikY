@@ -177,6 +177,117 @@ func (h *Handlers) GetPasses(c *fiber.Ctx) error {
 	})
 }
 
+// GetAreaPasses predicts satellite passes over a map location for ALL satellites.
+// GET /api/passes/area
+// Required query params: lat, lng
+// Optional query params: hours (default 6, max 24)
+func (h *Handlers) GetAreaPasses(c *fiber.Ctx) error {
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	if latStr == "" || lngStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing coordinates (lat, lng parameters)",
+		})
+	}
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid latitude: must be between -90 and 90",
+		})
+	}
+
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil || lng < -180 || lng > 180 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid longitude: must be between -180 and 180",
+		})
+	}
+
+	hours := c.QueryInt("hours", 6)
+	if hours < 1 || hours > 24 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hours must be between 1 and 24",
+		})
+	}
+
+	allSats := h.service.GetAll(models.FilterParams{})
+	now := time.Now().UTC()
+
+	type passResult struct {
+		SatID   string
+		SatName string
+		OrbitType string
+		Passes  []models.Pass
+	}
+
+	results := make(chan passResult, len(allSats))
+	sem := make(chan struct{}, 20) // limit concurrency
+
+	for _, s := range allSats {
+		go func(sat *models.Satellite) {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			defer func() {
+				if r := recover(); r != nil {
+					results <- passResult{SatID: sat.ID, SatName: sat.Name, OrbitType: sat.OrbitType}
+				}
+			}()
+
+			passes, err := satellite.CalculatePasses(sat.TLE, lat, lng, 0, now, hours)
+			if err != nil || len(passes) == 0 {
+				results <- passResult{SatID: sat.ID, SatName: sat.Name, OrbitType: sat.OrbitType}
+				return
+			}
+			for i := range passes {
+				passes[i].SatelliteID = sat.ID
+				passes[i].SatelliteName = sat.Name
+			}
+			results <- passResult{SatID: sat.ID, SatName: sat.Name, OrbitType: sat.OrbitType, Passes: passes}
+		}(s)
+	}
+
+	var allPasses []fiber.Map
+	for i := 0; i < len(allSats); i++ {
+		r := <-results
+		for _, p := range r.Passes {
+			allPasses = append(allPasses, fiber.Map{
+				"satellite_id":   p.SatelliteID,
+				"satellite_name": p.SatelliteName,
+				"orbit_type":     r.OrbitType,
+				"aos":            p.AOS,
+				"los":            p.LOS,
+				"max_elevation":  p.MaxElevation,
+				"duration":       p.Duration,
+			})
+		}
+	}
+
+	// Sort by AOS
+	for i := 0; i < len(allPasses); i++ {
+		for j := i + 1; j < len(allPasses); j++ {
+			if allPasses[i]["aos"].(int64) > allPasses[j]["aos"].(int64) {
+				allPasses[i], allPasses[j] = allPasses[j], allPasses[i]
+			}
+		}
+	}
+
+	// Limit to 50 results
+	if len(allPasses) > 50 {
+		allPasses = allPasses[:50]
+	}
+
+	return c.JSON(fiber.Map{
+		"observer": fiber.Map{
+			"lat": lat,
+			"lng": lng,
+		},
+		"hours":  hours,
+		"passes": allPasses,
+	})
+}
+
 // UploadTLE handles TLE data upload (raw text body).
 // POST /api/tle/upload
 func (h *Handlers) UploadTLE(c *fiber.Ctx) error {

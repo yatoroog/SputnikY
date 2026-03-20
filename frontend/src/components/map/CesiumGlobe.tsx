@@ -10,6 +10,7 @@ if (typeof window !== 'undefined') {
   window.CESIUM_BASE_URL = '/cesium';
 }
 
+const EARTH_RADIUS_KM = 6_371;
 const EARTH_RADIUS_METERS = 6_378_137;
 const INITIAL_CAMERA_RANGE_METERS = 22_000_000;
 
@@ -68,6 +69,8 @@ export default function CesiumGlobe({
     Map<string, InstanceType<typeof import('cesium').PointPrimitive>>
   >(new Map());
   const orbitEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const coverageEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const clickedLocationEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const selectedLabelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(
     null
   );
@@ -89,6 +92,7 @@ export default function CesiumGlobe({
 
   const positions = useSatelliteStore((state) => state.positions);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
+  const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   satellitesRef.current = satellites;
 
   /* ── init ───────────────────────────────────────────────── */
@@ -221,7 +225,21 @@ export default function CesiumGlobe({
             const sat = satellitesRef.current.find((item) => item.id === satId);
             if (sat) selectSatellite(sat);
           } else {
-            selectSatellite(null);
+            // Click on empty area — get geographic coordinates
+            const ray = viewer.camera.getPickRay(movement.position);
+            if (ray) {
+              const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+              if (cartesian) {
+                const carto = Cesium.Cartographic.fromCartesian(cartesian);
+                const lat = Cesium.Math.toDegrees(carto.latitude);
+                const lng = Cesium.Math.toDegrees(carto.longitude);
+                setClickedLocation({ lat, lng });
+              } else {
+                selectSatellite(null);
+              }
+            } else {
+              selectSatellite(null);
+            }
           }
         },
         Cesium.ScreenSpaceEventType.LEFT_CLICK
@@ -298,7 +316,7 @@ export default function CesiumGlobe({
         error instanceof Error ? error.message : 'Не удалось подготовить 3D-глобус'
       );
     }
-  }, [selectSatellite]);
+  }, [selectSatellite, setClickedLocation]);
 
   useEffect(() => {
     void initViewer();
@@ -313,6 +331,8 @@ export default function CesiumGlobe({
       pointMapRef.current.clear();
       pointCollectionRef.current = null;
       selectedLabelEntityRef.current = null;
+      coverageEntityRef.current = null;
+      clickedLocationEntityRef.current = null;
 
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
         viewerRef.current.destroy();
@@ -445,6 +465,128 @@ export default function CesiumGlobe({
 
     viewer.scene.requestRender();
   }, [satellites, positions, selectedSatellite, viewerState]);
+
+  /* ── coverage zone (footprint) ─────────────────────────── */
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (viewerState !== 'ready' || !viewer || viewer.isDestroyed() || !Cesium) return;
+
+    if (coverageEntityRef.current) {
+      viewer.entities.remove(coverageEntityRef.current);
+      coverageEntityRef.current = null;
+    }
+
+    if (!selectedSatellite) return;
+
+    const pos = positions.get(selectedSatellite.id);
+    const lat = pos?.lat ?? selectedSatellite.latitude;
+    const lng = pos?.lng ?? selectedSatellite.longitude;
+    const altKm = pos?.alt ?? selectedSatellite.altitude;
+
+    if (!hasRenderableCoordinates(lat, lng, altKm)) return;
+
+    // Footprint radius calculation
+    const halfAngle = Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
+    const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
+
+    const baseColor = getOrbitPointColor(selectedSatellite.orbitType);
+    const color = Cesium.Color.fromCssColorString(baseColor);
+
+    coverageEntityRef.current = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+      ellipse: {
+        semiMajorAxis: groundRadiusMeters,
+        semiMinorAxis: groundRadiusMeters,
+        material: color.withAlpha(0.08),
+        outline: true,
+        outlineColor: color.withAlpha(0.4),
+        outlineWidth: 1.5,
+        height: 0,
+      },
+    });
+
+    viewer.scene.requestRender();
+  }, [selectedSatellite, positions, viewerState]);
+
+  /* ── clicked location marker ─────────────────────────── */
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    const clickedLocation = useSatelliteStore.getState().clickedLocation;
+    if (viewerState !== 'ready' || !viewer || viewer.isDestroyed() || !Cesium) return;
+
+    if (clickedLocationEntityRef.current) {
+      viewer.entities.remove(clickedLocationEntityRef.current);
+      clickedLocationEntityRef.current = null;
+    }
+
+    if (!clickedLocation) return;
+
+    clickedLocationEntityRef.current = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(clickedLocation.lng, clickedLocation.lat, 0),
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.fromCssColorString('#f59e0b'),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      ellipse: {
+        semiMajorAxis: 100_000,
+        semiMinorAxis: 100_000,
+        material: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.1),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.3),
+        height: 0,
+      },
+    });
+
+    viewer.scene.requestRender();
+  }, [viewerState]);
+
+  // Subscribe to clickedLocation changes
+  useEffect(() => {
+    const unsub = useSatelliteStore.subscribe((state, prev) => {
+      if (state.clickedLocation !== prev.clickedLocation) {
+        const viewer = viewerRef.current;
+        const Cesium = cesiumRef.current;
+        if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+        if (clickedLocationEntityRef.current) {
+          viewer.entities.remove(clickedLocationEntityRef.current);
+          clickedLocationEntityRef.current = null;
+        }
+
+        const loc = state.clickedLocation;
+        if (!loc) { viewer.scene.requestRender(); return; }
+
+        clickedLocationEntityRef.current = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(loc.lng, loc.lat, 0),
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.fromCssColorString('#f59e0b'),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          },
+          ellipse: {
+            semiMajorAxis: 100_000,
+            semiMinorAxis: 100_000,
+            material: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.1),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.3),
+            height: 0,
+          },
+        });
+
+        viewer.scene.requestRender();
+      }
+    });
+    return unsub;
+  }, []);
 
   /* ── orbit path (only when satellite selected) ─────────── */
 

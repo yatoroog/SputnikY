@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Satellite, SatellitePosition } from '@/types';
+import type { Satellite, SatellitePosition, AreaPass } from '@/types';
 
 interface SatelliteStore {
   satellites: Satellite[];
@@ -7,11 +7,20 @@ interface SatelliteStore {
   positions: Map<string, SatellitePosition>;
   loading: boolean;
   error: string | null;
+
+  clickedLocation: { lat: number; lng: number } | null;
+  areaPasses: AreaPass[];
+  areaPassesLoading: boolean;
+
   setSatellites: (satellites: Satellite[]) => void;
   selectSatellite: (satellite: Satellite | null) => void;
   updatePositions: (positions: SatellitePosition[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
+  setClickedLocation: (location: { lat: number; lng: number } | null) => void;
+  setAreaPasses: (passes: AreaPass[]) => void;
+  setAreaPassesLoading: (loading: boolean) => void;
 }
 
 export const useSatelliteStore = create<SatelliteStore>()((set) => ({
@@ -21,9 +30,14 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   loading: false,
   error: null,
 
+  clickedLocation: null,
+  areaPasses: [],
+  areaPassesLoading: false,
+
   setSatellites: (satellites: Satellite[]) => set({ satellites }),
 
-  selectSatellite: (satellite: Satellite | null) => set({ selectedSatellite: satellite }),
+  selectSatellite: (satellite: Satellite | null) =>
+    set({ selectedSatellite: satellite, clickedLocation: null, areaPasses: [] }),
 
   updatePositions: (positions: SatellitePosition[]) =>
     set((state) => {
@@ -37,4 +51,11 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   setLoading: (loading: boolean) => set({ loading }),
 
   setError: (error: string | null) => set({ error }),
+
+  setClickedLocation: (location) =>
+    set({ clickedLocation: location, selectedSatellite: null }),
+
+  setAreaPasses: (passes) => set({ areaPasses: passes }),
+
+  setAreaPassesLoading: (loading) => set({ areaPassesLoading: loading }),
 }));
