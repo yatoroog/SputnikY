@@ -1,0 +1,191 @@
+import type { Satellite, OrbitPoint, Pass, FilterParams } from '@/types';
+import { isRenderableAltitudeKm } from '@/lib/utils';
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+  const headers = new Headers(options?.headers);
+
+  if (!(options?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+type SatelliteWire = Partial<Satellite> & {
+  id: string;
+  name: string;
+  norad_id?: number;
+  orbit_type?: string;
+};
+
+type PassWire = Partial<Pass> & {
+  satellite_id?: string;
+  satellite_name?: string;
+  max_elevation?: number;
+};
+
+type SatelliteListResponse = {
+  count: number;
+  satellites: SatelliteWire[];
+};
+
+type OrbitResponse = {
+  satellite_id: string;
+  duration_min: number;
+  points: OrbitPoint[];
+};
+
+type PassesResponse = {
+  satellite_id: string;
+  satellite_name: string;
+  observer: {
+    lat: number;
+    lng: number;
+    alt: number;
+  };
+  hours: number;
+  passes: PassWire[];
+};
+
+type PresetsResponse = {
+  presets: string[];
+};
+
+function normalizeSatellite(satellite: SatelliteWire): Satellite | null {
+  const normalized = {
+    id: satellite.id,
+    name: satellite.name,
+    noradId: satellite.noradId ?? satellite.norad_id ?? 0,
+    country: satellite.country ?? 'Unknown',
+    orbitType: satellite.orbitType ?? satellite.orbit_type ?? '',
+    purpose: satellite.purpose ?? '',
+    latitude: satellite.latitude ?? 0,
+    longitude: satellite.longitude ?? 0,
+    altitude: satellite.altitude ?? 0,
+    velocity: satellite.velocity ?? 0,
+    period: satellite.period ?? 0,
+    inclination: satellite.inclination ?? 0,
+    epoch: satellite.epoch ?? '',
+  };
+
+  if (
+    !Number.isFinite(normalized.latitude) ||
+    !Number.isFinite(normalized.longitude) ||
+    normalized.latitude < -90 ||
+    normalized.latitude > 90 ||
+    normalized.longitude < -180 ||
+    normalized.longitude > 180 ||
+    !isRenderableAltitudeKm(normalized.altitude)
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizePass(pass: PassWire): Pass {
+  return {
+    satelliteId: pass.satelliteId ?? pass.satellite_id ?? '',
+    satelliteName: pass.satelliteName ?? pass.satellite_name ?? '',
+    aos: pass.aos ?? 0,
+    los: pass.los ?? 0,
+    maxElevation: pass.maxElevation ?? pass.max_elevation ?? 0,
+    duration: pass.duration ?? 0,
+  };
+}
+
+export async function fetchSatellites(filters?: FilterParams): Promise<Satellite[]> {
+  const params = new URLSearchParams();
+
+  if (filters?.country) params.set('country', filters.country);
+  if (filters?.orbitType) params.set('orbit_type', filters.orbitType);
+  if (filters?.purpose) params.set('purpose', filters.purpose);
+  if (filters?.search) params.set('search', filters.search);
+
+  const query = params.toString();
+  const path = `/api/satellites${query ? `?${query}` : ''}`;
+  const data = await request<SatelliteListResponse | SatelliteWire[]>(path);
+  const satellites = Array.isArray(data) ? data : data.satellites;
+
+  return satellites
+    .map(normalizeSatellite)
+    .filter((satellite): satellite is Satellite => satellite !== null);
+}
+
+export async function fetchSatelliteById(id: string): Promise<Satellite> {
+  const satellite = normalizeSatellite(
+    await request<SatelliteWire>(`/api/satellites/${id}`)
+  );
+
+  if (!satellite) {
+    throw new Error('Satellite data is out of the supported visualization range');
+  }
+
+  return satellite;
+}
+
+export async function fetchOrbit(id: string, hours: number = 2): Promise<OrbitPoint[]> {
+  const duration = Math.max(1, Math.round(hours * 60));
+  const data = await request<OrbitResponse | OrbitPoint[]>(
+    `/api/satellites/${id}/orbit?duration=${duration}`
+  );
+
+  return Array.isArray(data) ? data : data.points;
+}
+
+export async function fetchPasses(
+  id: string,
+  lat: number,
+  lng: number,
+  hours: number = 24
+): Promise<Pass[]> {
+  const data = await request<PassesResponse | PassWire[]>(
+    `/api/passes?id=${encodeURIComponent(id)}&lat=${lat}&lng=${lng}&hours=${hours}`
+  );
+  const passes = Array.isArray(data) ? data : data.passes;
+
+  return passes.map(normalizePass);
+}
+
+export async function uploadTLE(file: File): Promise<Satellite[]> {
+  const rawTle = await file.text();
+
+  await request<{ message: string; count: number }>('/api/tle/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+    body: rawTle,
+  });
+
+  return fetchSatellites();
+}
+
+export async function fetchPresets(): Promise<string[]> {
+  const data = await request<PresetsResponse | string[]>('/api/tle/presets');
+  return Array.isArray(data) ? data : data.presets;
+}
+
+export async function loadPreset(name: string): Promise<Satellite[]> {
+  await request<{ message: string; preset: string; count: number }>(
+    `/api/tle/presets/${encodeURIComponent(name)}`,
+    {
+      method: 'POST',
+    }
+  );
+
+  return fetchSatellites();
+}
