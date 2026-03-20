@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SputnikX — Мониторинг пролётов спутников
 
 Веб-платформа для мониторинга спутников в реальном времени на интерактивном 3D-глобусе. Использует TLE-данные и SGP4-алгоритм для расчёта орбит.
@@ -71,3 +72,6 @@ SputnikX/
 - **Backend:** Go 1.22, Fiber, go-satellite (SGP4), zerolog, WebSocket
 - **Frontend:** Next.js 14, TypeScript, CesiumJS, Resium, Zustand, Tailwind CSS
 - **Инфра:** Docker, Docker Compose
+=======
+# web-platform-mso
+>>>>>>> 99806d79b11e75a78fba52cc6a87926678ca941d
