@@ -407,3 +407,104 @@ body {
 [data-view="2d"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(80, 100, 150, 0.5);
 }
+
+/* ========================================
+   Dark mode 2D map — invert tiles to dark
+   ======================================== */
+[data-theme="dark"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(1.1) saturate(0.3);
+}
+
+/* Keep markers/overlays normal (counter-invert not needed — they sit on a separate pane) */
+
+/* 2D dark mode: dark glass panels stay the same, no changes needed */
+
+/* ========================================
+   Light theme overrides
+   ======================================== */
+[data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg-hover: rgba(255, 255, 255, 0.75);
+  --glass-bg-active: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.1);
+  --glass-border-hover: rgba(0, 0, 0, 0.15);
+  --glass-border-accent: rgba(6, 182, 212, 0.3);
+  --glass-highlight: rgba(255, 255, 255, 0.6);
+  --glass-shadow: rgba(0, 0, 0, 0.08);
+  --glass-blur: 20px;
+  --glass-saturation: 120%;
+  --glass-brightness: 1.05;
+  --prism-start: rgba(6, 182, 212, 0.1);
+  --prism-mid: rgba(139, 92, 246, 0.08);
+  --prism-end: rgba(59, 130, 246, 0.1);
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+}
+
+[data-theme="light"] .panel-base {
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.06),
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme="light"] .panel-base::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 40%),
+    radial-gradient(ellipse at 30% 0%, rgba(6, 182, 212, 0.05), transparent 50%);
+}
+
+[data-theme="light"] .panel-base::after {
+  opacity: 0.15;
+}
+
+[data-theme="light"] .premium-field {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+[data-theme="light"] .premium-field:focus-within {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+[data-theme="light"] .premium-icon-button {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .premium-icon-button:hover {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .premium-chip {
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .premium-chip:hover {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .glass-divider-h {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent);
+}
+
+[data-theme="light"] .premium-divider {
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.08), transparent);
+}
+
+[data-theme="light"] .glass-shimmer::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
