@@ -158,7 +158,6 @@ export default function CesiumGlobe({
 
     try {
       const Cesium = await import('cesium');
-      // @ts-expect-error - CSS module import for Cesium widgets
       await import('cesium/Build/Cesium/Widgets/widgets.css').catch(() => {});
 
       // Guard against double init (React Strict Mode)
