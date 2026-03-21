@@ -13,7 +13,9 @@ import { useSimulatedPositions } from '@/hooks/useSimulatedPositions';
 import Sidebar from '@/components/ui/Sidebar';
 import SatelliteCard from '@/components/ui/SatelliteCard';
 import AreaPassesPanel from '@/components/ui/AreaPassesPanel';
+import GroupingComparisonPanel from '@/components/ui/GroupingComparisonPanel';
 import TimelineControl from '@/components/ui/TimelineControl';
+import { useGroupingStore } from '@/store/groupingStore';
 
 const CesiumGlobe = dynamic(() => import('@/components/map/CesiumGlobe'), {
   ssr: false,
@@ -49,6 +51,7 @@ export default function HomePage() {
   const satellites = useSatelliteStore((state) => state.satellites);
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
   const clickedLocation = useSatelliteStore((state) => state.clickedLocation);
+  const isComparisonOpen = useGroupingStore((state) => state.isComparisonOpen);
   const isRealTime = useTimeStore((state) => state.isRealTime);
   const isDark = useThemeStore((state) => state.isDark);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
@@ -110,14 +113,14 @@ export default function HomePage() {
       </div>
 
       {/* Right satellite card */}
-      {selectedSatellite && (
+      {!isComparisonOpen && selectedSatellite && (
         <div className="absolute top-4 right-4 bottom-28 z-10">
           <SatelliteCard />
         </div>
       )}
 
       {/* Right area passes panel */}
-      {!selectedSatellite && clickedLocation && (
+      {!isComparisonOpen && !selectedSatellite && clickedLocation && (
         <div className="absolute top-4 right-4 bottom-28 z-10">
           <AreaPassesPanel />
         </div>
@@ -134,6 +137,8 @@ export default function HomePage() {
           <ThemeToggle />
         </div>
       )}
+
+      <GroupingComparisonPanel />
     </div>
   );
 }

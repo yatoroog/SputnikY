@@ -5,6 +5,22 @@ import { Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { uploadTLE, fetchPresets, loadPreset } from '@/lib/api';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { cn } from '@/lib/utils';
+import type { FilterFacets, Satellite } from '@/types';
+
+function hasFilterFacets(facets: FilterFacets | null): facets is FilterFacets {
+  return !!facets && (facets.countries.length > 0 || facets.purposes.length > 0);
+}
+
+function deriveFilterFacets(satellites: Satellite[]): FilterFacets {
+  return {
+    countries: Array.from(
+      new Set(satellites.map((satellite) => satellite.country).filter(Boolean))
+    ).sort((left, right) => left.localeCompare(right, 'ru')),
+    purposes: Array.from(
+      new Set(satellites.map((satellite) => satellite.purpose).filter(Boolean))
+    ).sort((left, right) => left.localeCompare(right, 'ru')),
+  };
+}
 
 export default function TleUploader() {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -54,7 +70,11 @@ export default function TleUploader() {
         const catalog = await uploadTLE(file);
         setSatellites(catalog.satellites);
         setCatalogStatus(catalog.catalogStatus);
-        setFilterFacets(catalog.filterFacets);
+        setFilterFacets(
+          hasFilterFacets(catalog.filterFacets)
+            ? catalog.filterFacets
+            : deriveFilterFacets(catalog.satellites)
+        );
         setSuccess(`Загружено ${catalog.satellites.length} спутников`);
       } catch (err) {
         const message =
@@ -113,7 +133,11 @@ export default function TleUploader() {
         const catalog = await loadPreset(name);
         setSatellites(catalog.satellites);
         setCatalogStatus(catalog.catalogStatus);
-        setFilterFacets(catalog.filterFacets);
+        setFilterFacets(
+          hasFilterFacets(catalog.filterFacets)
+            ? catalog.filterFacets
+            : deriveFilterFacets(catalog.satellites)
+        );
         setSuccess(`Пресет "${name}" загружен`);
       } catch (err) {
         const message =
