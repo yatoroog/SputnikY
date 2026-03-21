@@ -56,8 +56,9 @@ func (h *Handlers) GetSatellites(c *fiber.Ctx) error {
 
 	satellites := h.service.GetAll(filters)
 	return c.JSON(fiber.Map{
-		"count":      len(satellites),
-		"satellites": satellites,
+		"count":          len(satellites),
+		"catalog_status": h.service.GetCatalogStatus(),
+		"satellites":     satellites,
 	})
 }
 
@@ -360,6 +361,11 @@ func (h *Handlers) UploadTLE(c *fiber.Ctx) error {
 			"error": "Failed to load satellites from TLE data",
 		})
 	}
+	h.service.SetCatalogStatus(
+		models.CatalogSourceUploadedTLE,
+		time.Now().UTC(),
+		"Catalog extended via manual TLE upload.",
+	)
 
 	log.Info().Int("count", len(tleData)).Msg("TLE data uploaded and loaded")
 
@@ -401,6 +407,11 @@ func (h *Handlers) LoadPreset(c *fiber.Ctx) error {
 			"error": "Failed to load preset",
 		})
 	}
+	h.service.SetCatalogStatus(
+		models.CatalogSourcePreset,
+		time.Now().UTC(),
+		"Catalog extended via preset load: "+name,
+	)
 
 	log.Info().Str("preset", name).Int("count", len(tleData)).Msg("Preset loaded")
 

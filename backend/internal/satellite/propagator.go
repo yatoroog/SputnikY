@@ -156,50 +156,104 @@ func DetermineOrbitType(periodMinutes float64, eccentricity float64) string {
 	}
 }
 
-// DetermineCountry maps the first two characters of an international designator to a country name.
-func DetermineCountry(intlDesignator string) string {
-	intlDesignator = strings.TrimSpace(intlDesignator)
-	if len(intlDesignator) < 2 {
-		return "Unknown"
+// DetermineCountry determines satellite country of origin using the satellite name
+// (sourced from N2YO API) and international designator from TLE data.
+func DetermineCountry(name string, intlDesignator string) string {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+
+	// USA
+	usaPrefixes := []string{
+		"STARLINK", "GPS ", "NAVSTAR", "IRIDIUM", "USA ", "USA-",
+		"GOES ", "NOAA ", "TDRS", "MUOS", "AEHF", "NROL", "SDS ",
+		"CYGNUS", "DRAGON", "CREW DRAGON", "FALCON",
+		"SXM", "SIRIUS", "DIRECTV", "ORBCOMM", "GLOBALSTAR",
+		"TESS", "SWIFT", "LANDSAT", "AQUA", "TERRA", "AURA",
+		"ICESAT", "CALIPSO", "CLOUDSAT", "SBIRS", "WGS ",
+		"ATLAS ", "DELTA ", "INTELSAT", "VIASAT", "ECHOSTAR",
+		"SPACEX", "ONEWEB",
+	}
+	for _, p := range usaPrefixes {
+		if strings.Contains(upper, p) {
+			return "USA"
+		}
 	}
 
-	countryMap := map[string]string{
-		"98": "International",
-		"97": "USA",
-		"96": "USA",
-		"95": "USA",
-		"99": "USA",
-		"00": "USA",
-		"01": "USA",
-		"02": "USA",
-		"03": "USA",
-		"04": "USA",
-		"05": "USA",
-		"06": "USA",
-		"07": "USA",
-		"08": "USA",
-		"09": "USA",
-		"10": "USA",
-		"11": "USA",
-		"12": "USA",
-		"13": "USA",
-		"14": "USA",
-		"15": "USA",
-		"16": "USA",
-		"17": "USA",
-		"18": "USA",
-		"19": "USA",
-		"20": "USA",
-		"21": "China",
-		"22": "USA",
-		"23": "USA",
-		"24": "USA",
+	// Russia
+	rusPrefixes := []string{
+		"COSMOS", "KOSMOS", "GLONASS", "PROGRESS", "SOYUZ",
+		"YAMAL", "EXPRESS-", "RESURS", "GONETS", "LUCH ",
+		"ELEKTRO", "ARKTIKA", "MOLNIYA", "BION", "FOTON",
+		"KANOPUS", "KONDOR", "BARS-M", "MERIDIAN", "NADEZHDA",
+		"STRELA", "PARUS", "RODNIK",
+	}
+	for _, p := range rusPrefixes {
+		if strings.Contains(upper, p) {
+			return "Russia"
+		}
 	}
 
-	prefix := intlDesignator[:2]
-	if country, ok := countryMap[prefix]; ok {
-		return country
+	// China
+	cnPrefixes := []string{
+		"BEIDOU", "YAOGAN", "SHIYAN", "TIANHE", "ZHONGXING",
+		"FENGYUN", "SHIJIAN", "TIANGONG", "SHENZHOU", "GAOFEN",
+		"ZIYUAN", "HAIYANG", "CHANGE", "QUEQIAO", "TIANWEN",
+		"CZ-", "WENTIAN", "MENGTIAN", "CSS ", "JILIN",
 	}
+	for _, p := range cnPrefixes {
+		if strings.Contains(upper, p) {
+			return "China"
+		}
+	}
+
+	// EU / ESA
+	euPrefixes := []string{
+		"GALILEO", "SENTINEL", "AEOLUS", "METEOSAT", "SWARM",
+		"COPERNICUS", "EUTELSAT", "ASTRA ", "SES-", "EGNOS",
+	}
+	for _, p := range euPrefixes {
+		if strings.Contains(upper, p) {
+			return "EU/ESA"
+		}
+	}
+
+	// India
+	inPrefixes := []string{
+		"CARTOSAT", "RESOURCESAT", "IRNSS", "NAVIC", "GSAT",
+		"INSAT", "ASTROSAT", "RISAT", "OCEANSAT", "EMISAT",
+	}
+	for _, p := range inPrefixes {
+		if strings.Contains(upper, p) {
+			return "India"
+		}
+	}
+
+	// Japan
+	jpPrefixes := []string{
+		"MICHIBIKI", "QZS-", "HIMAWARI", "ALOS", "HAYABUSA",
+		"GOSAT", "IBUKI", "DAICHI",
+	}
+	for _, p := range jpPrefixes {
+		if strings.Contains(upper, p) {
+			return "Japan"
+		}
+	}
+
+	// South Korea
+	if strings.Contains(upper, "KOMPSAT") || strings.Contains(upper, "ARIRANG") {
+		return "South Korea"
+	}
+
+	// International
+	if strings.Contains(upper, "ISS") && (strings.Contains(upper, "ZARYA") || strings.Contains(upper, "ISS (")) {
+		return "International"
+	}
+
+	// METEOR can be Russia or other
+	if strings.Contains(upper, "METEOR-M") || strings.Contains(upper, "METEOR ") {
+		return "Russia"
+	}
+
+	_ = intlDesignator
 	return "Unknown"
 }
 

@@ -5,6 +5,7 @@ import type {
   AreaPass,
   FilterParams,
   SatellitePosition,
+  CatalogStatus,
 } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
@@ -46,7 +47,17 @@ type PassWire = Partial<Pass> & {
 
 type SatelliteListResponse = {
   count: number;
+  catalog_status?: CatalogStatusWire;
   satellites: SatelliteWire[];
+};
+
+type CatalogStatusWire = Partial<CatalogStatus> & {
+  last_sync_at?: string | null;
+};
+
+export type SatelliteCatalog = {
+  satellites: Satellite[];
+  catalogStatus: CatalogStatus | null;
 };
 
 type OrbitResponse = {
@@ -137,7 +148,19 @@ function normalizePosition(position: SatellitePosition): SatellitePosition | nul
   return position;
 }
 
-export async function fetchSatellites(filters?: FilterParams): Promise<Satellite[]> {
+function normalizeCatalogStatus(status?: CatalogStatusWire | null): CatalogStatus | null {
+  if (!status || typeof status.source !== 'string' || status.source.trim() === '') {
+    return null;
+  }
+
+  return {
+    source: status.source,
+    lastSyncAt: status.lastSyncAt ?? status.last_sync_at ?? null,
+    note: status.note ?? null,
+  };
+}
+
+export async function fetchSatelliteCatalog(filters?: FilterParams): Promise<SatelliteCatalog> {
   const params = new URLSearchParams();
 
   if (filters?.country) params.set('country', filters.country);
@@ -149,10 +172,19 @@ export async function fetchSatellites(filters?: FilterParams): Promise<Satellite
   const path = `/api/satellites${query ? `?${query}` : ''}`;
   const data = await request<SatelliteListResponse | SatelliteWire[]>(path);
   const satellites = Array.isArray(data) ? data : data.satellites;
+  const catalogStatus = Array.isArray(data) ? null : normalizeCatalogStatus(data.catalog_status);
 
-  return satellites
-    .map(normalizeSatellite)
-    .filter((satellite): satellite is Satellite => satellite !== null);
+  return {
+    satellites: satellites
+      .map(normalizeSatellite)
+      .filter((satellite): satellite is Satellite => satellite !== null),
+    catalogStatus,
+  };
+}
+
+export async function fetchSatellites(filters?: FilterParams): Promise<Satellite[]> {
+  const { satellites } = await fetchSatelliteCatalog(filters);
+  return satellites;
 }
 
 export async function fetchSatelliteById(id: string): Promise<Satellite> {
@@ -224,7 +256,7 @@ export async function fetchAreaPasses(lat: number, lng: number, hours: number = 
   }));
 }
 
-export async function uploadTLE(file: File): Promise<Satellite[]> {
+export async function uploadTLE(file: File): Promise<SatelliteCatalog> {
   const rawTle = await file.text();
 
   await request<{ message: string; count: number }>('/api/tle/upload', {
@@ -235,7 +267,7 @@ export async function uploadTLE(file: File): Promise<Satellite[]> {
     body: rawTle,
   });
 
-  return fetchSatellites();
+  return fetchSatelliteCatalog();
 }
 
 export async function fetchPresets(): Promise<string[]> {
@@ -243,7 +275,7 @@ export async function fetchPresets(): Promise<string[]> {
   return Array.isArray(data) ? data : data.presets;
 }
 
-export async function loadPreset(name: string): Promise<Satellite[]> {
+export async function loadPreset(name: string): Promise<SatelliteCatalog> {
   await request<{ message: string; preset: string; count: number }>(
     `/api/tle/presets/${encodeURIComponent(name)}`,
     {
@@ -251,7 +283,7 @@ export async function loadPreset(name: string): Promise<Satellite[]> {
     }
   );
 
-  return fetchSatellites();
+  return fetchSatelliteCatalog();
 }
 
 export async function fetchPositionsAtTime(time: Date): Promise<SatellitePosition[]> {

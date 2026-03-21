@@ -1,5 +1,15 @@
 package models
 
+import "time"
+
+const (
+	CatalogSourceUnknown     = "unknown"
+	CatalogSourceN2YO        = "n2yo"
+	CatalogSourceLocalTLE    = "local_tle"
+	CatalogSourceUploadedTLE = "uploaded_tle"
+	CatalogSourcePreset      = "preset"
+)
+
 // TLEData holds the raw two-line element set for a satellite.
 type TLEData struct {
 	Name  string `json:"name"`
@@ -23,6 +33,13 @@ type Satellite struct {
 	Inclination float64 `json:"inclination"`
 	Epoch       string  `json:"epoch"`
 	TLE         TLEData `json:"tle,omitempty"`
+}
+
+// CatalogStatus describes how the in-memory satellite catalog was last populated.
+type CatalogStatus struct {
+	Source     string     `json:"source"`
+	LastSyncAt *time.Time `json:"last_sync_at,omitempty"`
+	Note       string     `json:"note,omitempty"`
 }
 
 // SatellitePosition is a lightweight position snapshot for WebSocket broadcasts.

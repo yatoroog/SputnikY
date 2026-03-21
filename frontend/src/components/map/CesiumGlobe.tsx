@@ -5,7 +5,6 @@ import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
-import { fetchOrbit } from '@/lib/api';
 
 if (typeof window !== 'undefined') {
   window.CESIUM_BASE_URL = '/cesium';
@@ -19,14 +18,21 @@ const GLOBE_BACKGROUND = '#010108';
 const GLOBE_BASE = '#0a1628';
 const GLOBE_COUNTRY_STROKE = '#c4cedd';
 const LABEL_COLOR = '#f8fafc';
+const ORBIT_COLOR = '#a855f7';
+const COVERAGE_COLOR = '#a855f7';
 
 function getOrbitPointColor(orbitType: string) {
   switch (orbitType?.toUpperCase()) {
-    case 'LEO': return '#22d3ee';
-    case 'MEO': return '#60a5fa';
-    case 'GEO': return '#fbbf24';
-    case 'HEO': return '#f87171';
-    default: return '#94a3b8';
+    case 'LEO':
+      return '#22d3ee';
+    case 'MEO':
+      return '#60a5fa';
+    case 'GEO':
+      return '#fbbf24';
+    case 'HEO':
+      return '#f87171';
+    default:
+      return '#94a3b8';
   }
 }
 
@@ -68,7 +74,7 @@ function hasRenderableCoordinates(lat: number, lng: number, altKm: number) {
   );
 }
 
-function normalizeLongitude(lng: number) {
+function normalizeLng(lng: number) {
   let normalized = lng;
   while (normalized > 180) normalized -= 360;
   while (normalized < -180) normalized += 360;
@@ -79,7 +85,7 @@ function interpolateLongitude(from: number, to: number, progress: number) {
   let delta = to - from;
   if (delta > 180) delta -= 360;
   if (delta < -180) delta += 360;
-  return normalizeLongitude(from + delta * progress);
+  return normalizeLng(from + delta * progress);
 }
 
 function getMotionPosition(motion: MotionState, nowMs: number): RenderPosition {
@@ -92,10 +98,90 @@ function getMotionPosition(motion: MotionState, nowMs: number): RenderPosition {
   };
 }
 
-export default function CesiumGlobe({
-  satellites,
-  selectedSatellite,
-}: CesiumGlobeProps) {
+function buildOrbitSegments(
+  Cesium: typeof import('cesium'),
+  latDeg: number,
+  lngDeg: number,
+  altKm: number,
+  incDeg: number,
+  steps = 360
+): InstanceType<typeof import('cesium').Cartesian3>[][] {
+  const lat = latDeg * (Math.PI / 180);
+  const lng = lngDeg * (Math.PI / 180);
+  const altM = altKm * 1000;
+
+  const e1x = Math.cos(lat) * Math.cos(lng);
+  const e1y = Math.cos(lat) * Math.sin(lng);
+  const e1z = Math.sin(lat);
+
+  let px = -e1y;
+  let py = e1x;
+  let pz = 0.0;
+  let pLen = Math.sqrt(px * px + py * py + pz * pz);
+
+  if (pLen < 1e-9) {
+    px = 1;
+    py = 0;
+    pz = 0;
+    pLen = 1;
+  } else {
+    px /= pLen;
+    py /= pLen;
+    pz /= pLen;
+  }
+
+  const inc = incDeg * (Math.PI / 180);
+  const cosI = Math.cos(inc);
+  const sinI = Math.sin(inc);
+  const dot = e1x * px + e1y * py + e1z * pz;
+  const crx = e1y * pz - e1z * py;
+  const cry = e1z * px - e1x * pz;
+  const crz = e1x * py - e1y * px;
+
+  const e2x = px * cosI + crx * sinI + e1x * dot * (1 - cosI);
+  const e2y = py * cosI + cry * sinI + e1y * dot * (1 - cosI);
+  const e2z = pz * cosI + crz * sinI + e1z * dot * (1 - cosI);
+
+  const raw: Array<[number, number]> = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const angle = (2 * Math.PI * i) / steps;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+
+    const qx = cosine * e1x + sine * e2x;
+    const qy = cosine * e1y + sine * e2y;
+    const qz = cosine * e1z + sine * e2z;
+
+    const qLen = Math.sqrt(qx * qx + qy * qy + qz * qz);
+    if (qLen < 1e-10) continue;
+
+    const qLat = Math.asin(Math.max(-1, Math.min(1, qz / qLen))) * (180 / Math.PI);
+    const qLng = Math.atan2(qy / qLen, qx / qLen) * (180 / Math.PI);
+    raw.push([qLng, qLat]);
+  }
+
+  const segments: InstanceType<typeof import('cesium').Cartesian3>[][] = [];
+  let currentSegment: InstanceType<typeof import('cesium').Cartesian3>[] = [];
+
+  for (let i = 0; i < raw.length; i++) {
+    currentSegment.push(Cesium.Cartesian3.fromDegrees(raw[i][0], raw[i][1], altM));
+
+    if (i < raw.length - 1) {
+      const deltaLng = Math.abs(raw[i + 1][0] - raw[i][0]);
+      if (deltaLng > 180) {
+        if (currentSegment.length >= 2) segments.push(currentSegment);
+        currentSegment = [];
+      }
+    }
+  }
+
+  if (currentSegment.length >= 2) segments.push(currentSegment);
+
+  return segments;
+}
+
+export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlobeProps) {
   const viewerRef = useRef<InstanceType<typeof import('cesium').Viewer> | null>(null);
   const pointCollectionRef = useRef<
     InstanceType<typeof import('cesium').PointPrimitiveCollection> | null
@@ -103,16 +189,19 @@ export default function CesiumGlobe({
   const pointMapRef = useRef<
     Map<string, InstanceType<typeof import('cesium').PointPrimitive>>
   >(new Map());
-  const orbitEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const coverageEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const clickedLocationEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const selectedLabelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+
+  const orbitEntitiesRef = useRef<InstanceType<typeof import('cesium').Entity>[]>([]);
+  const coverageFillRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const coverageBorderRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const nadirRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const coverageSatIdRef = useRef<string | null>(null);
+
+  const labelRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const clickLocationRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const clickHandlerRef = useRef<InstanceType<
     typeof import('cesium').ScreenSpaceEventHandler
   > | null>(null);
-  const countryBordersRef = useRef<InstanceType<
-    typeof import('cesium').GeoJsonDataSource
-  > | null>(null);
+  const bordersRef = useRef<InstanceType<typeof import('cesium').GeoJsonDataSource> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cesiumRef = useRef<typeof import('cesium') | null>(null);
   const satellitesRef = useRef<Satellite[]>(satellites);
@@ -120,21 +209,20 @@ export default function CesiumGlobe({
   const pointMotionRef = useRef<Map<string, MotionState>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const renderIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastSnapshotAtRef = useRef<number | null>(null);
+  const lastSnapshotRef = useRef<number | null>(null);
+  const userInteractingRef = useRef(false);
   const modelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const prevCameraRef = useRef<{
     position: InstanceType<typeof import('cesium').Cartesian3>;
     direction: InstanceType<typeof import('cesium').Cartesian3>;
     up: InstanceType<typeof import('cesium').Cartesian3>;
   } | null>(null);
-
-  const isUserInteractingRef = useRef(false);
-  const lastFrameMsRef = useRef(performance.now());
-  const lastStoreTimeMsRef = useRef(0);
-  const lastStoreWallMsRef = useRef(performance.now());
   const isCloseUpRef = useRef(false);
   const closeUpRangeRef = useRef(4_000_000);
   const closeUpTrackingRef = useRef(false);
+  const lastFrameMsRef = useRef(performance.now());
+  const lastStoreTimeMsRef = useRef(0);
+  const lastStoreWallMsRef = useRef(performance.now());
 
   const [viewerState, setViewerState] = useState<'initializing' | 'ready' | 'error'>('initializing');
   const [viewerError, setViewerError] = useState<string | null>(null);
@@ -142,8 +230,133 @@ export default function CesiumGlobe({
   const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
+
   satellitesRef.current = satellites;
   selectedSatelliteRef.current = selectedSatellite;
+
+  const clearOrbit = useCallback(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    for (const entity of orbitEntitiesRef.current) {
+      try {
+        viewer.entities.remove(entity);
+      } catch {}
+    }
+    orbitEntitiesRef.current = [];
+  }, []);
+
+  const clearCoverage = useCallback(() => {
+    coverageSatIdRef.current = null;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    if (coverageFillRef.current) {
+      viewer.entities.remove(coverageFillRef.current);
+      coverageFillRef.current = null;
+    }
+    if (coverageBorderRef.current) {
+      viewer.entities.remove(coverageBorderRef.current);
+      coverageBorderRef.current = null;
+    }
+    if (nadirRef.current) {
+      viewer.entities.remove(nadirRef.current);
+      nadirRef.current = null;
+    }
+  }, []);
+
+  const drawInstant = useCallback((satellite: Satellite) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    const position = positionsRef.current.get(satellite.id);
+    const lat = position?.lat ?? satellite.latitude;
+    const lng = position?.lng ?? satellite.longitude;
+    const altKm = position?.alt ?? satellite.altitude;
+
+    if (!hasRenderableCoordinates(lat, lng, altKm)) return;
+
+    clearOrbit();
+
+    const segments = buildOrbitSegments(Cesium, lat, lng, altKm, satellite.inclination, 360);
+    const lineColor = Cesium.Color.fromCssColorString(ORBIT_COLOR).withAlpha(0.9);
+    const dimColor = Cesium.Color.fromCssColorString(ORBIT_COLOR).withAlpha(0.2);
+
+    for (const segment of segments) {
+      if (segment.length < 2) continue;
+      const entity = viewer.entities.add({
+        polyline: {
+          positions: segment,
+          width: 2,
+          material: lineColor,
+          clampToGround: false,
+          arcType: Cesium.ArcType.NONE,
+          depthFailMaterial: dimColor,
+        },
+      });
+      orbitEntitiesRef.current.push(entity);
+    }
+
+    clearCoverage();
+
+    const angleRad = Math.acos(Math.min(1, EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm)));
+    const radiusMeters = EARTH_RADIUS_KM * angleRad * 1000;
+    const color = Cesium.Color.fromCssColorString(COVERAGE_COLOR);
+    const initialPosition = Cesium.Cartesian3.fromDegrees(lng, lat, 0);
+
+    coverageFillRef.current = viewer.entities.add({
+      position: initialPosition,
+      ellipse: {
+        semiMajorAxis: radiusMeters,
+        semiMinorAxis: radiusMeters,
+        material: color.withAlpha(0.12),
+        outline: false,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        granularity: Cesium.Math.toRadians(1),
+      },
+    });
+
+    coverageBorderRef.current = viewer.entities.add({
+      position: initialPosition,
+      ellipse: {
+        semiMajorAxis: radiusMeters,
+        semiMinorAxis: radiusMeters,
+        material: Cesium.Color.TRANSPARENT,
+        outline: true,
+        outlineColor: color.withAlpha(0.85),
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        granularity: Cesium.Math.toRadians(1),
+      },
+    });
+
+    nadirRef.current = viewer.entities.add({
+      polyline: {
+        positions: [
+          Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
+          Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+        ],
+        width: 1.5,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: color.withAlpha(0.55),
+          dashLength: 12,
+          dashPattern: 0xff00,
+        }),
+        clampToGround: false,
+        arcType: Cesium.ArcType.NONE,
+        depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+          color: color.withAlpha(0.18),
+          dashLength: 12,
+          dashPattern: 0xff00,
+        }),
+      },
+    });
+
+    coverageSatIdRef.current = satellite.id;
+
+    viewer.scene.requestRender();
+  }, [clearOrbit, clearCoverage]);
 
   const initViewer = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
@@ -197,15 +410,12 @@ export default function CesiumGlobe({
         containerRef.current.innerHTML = '';
         setViewerState('error');
         setViewerError(
-          error instanceof Error
-            ? error.message
-            : 'Не удалось инициализировать Cesium Viewer'
+          error instanceof Error ? error.message : 'Ошибка инициализации Cesium'
         );
         return;
       }
 
       viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(GLOBE_BACKGROUND);
-
       viewer.scene.fog.enabled = true;
       viewer.scene.fog.density = 2.0e-4;
       viewer.scene.fog.minimumBrightness = 0.03;
@@ -216,14 +426,12 @@ export default function CesiumGlobe({
         viewer.scene.skyAtmosphere.brightnessShift = -0.15;
         viewer.scene.skyAtmosphere.saturationShift = 0.15;
       }
-
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(GLOBE_BASE);
       viewer.scene.globe.depthTestAgainstTerrain = true;
       viewer.scene.globe.enableLighting = true;
       viewer.scene.globe.showGroundAtmosphere = true;
       viewer.scene.globe.showWaterEffect = false;
       viewer.scene.postProcessStages.fxaa.enabled = true;
-
       viewer.screenSpaceEventHandler.removeInputAction(
         Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK
       );
@@ -243,14 +451,13 @@ export default function CesiumGlobe({
         )
       );
       viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-
       viewer.clock.shouldAnimate = false;
 
       viewer.camera.moveStart.addEventListener(() => {
-        isUserInteractingRef.current = true;
+        userInteractingRef.current = true;
       });
       viewer.camera.moveEnd.addEventListener(() => {
-        isUserInteractingRef.current = false;
+        userInteractingRef.current = false;
       });
 
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -262,36 +469,33 @@ export default function CesiumGlobe({
             | undefined;
 
           let satId: string | null = null;
-
-          if (typeof picked?.id === 'string') {
-            satId = picked.id;
-          } else if (typeof picked?.primitive?.id === 'string') {
-            satId = picked.primitive.id;
-          } else if (
+          if (typeof picked?.id === 'string') satId = picked.id;
+          else if (typeof picked?.primitive?.id === 'string') satId = picked.primitive.id;
+          else if (
             picked?.id &&
             typeof picked.id === 'object' &&
             'properties' in picked.id &&
             picked.id.properties
           ) {
-            const props = picked.id.properties as {
-              satelliteId?: { getValue?: () => unknown };
-            };
-            const value = props.satelliteId?.getValue?.();
+            const value = (
+              picked.id.properties as { satelliteId?: { getValue?: () => unknown } }
+            ).satelliteId?.getValue?.();
             if (typeof value === 'string') satId = value;
           }
 
           if (satId) {
-            const sat = satellitesRef.current.find((item) => item.id === satId);
-            if (sat) selectSatellite(sat);
+            const satellite = satellitesRef.current.find((item) => item.id === satId);
+            if (satellite) selectSatellite(satellite);
           } else {
             const ray = viewer.camera.getPickRay(movement.position);
             if (ray) {
               const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
               if (cartesian) {
-                const carto = Cesium.Cartographic.fromCartesian(cartesian);
-                const lat = Cesium.Math.toDegrees(carto.latitude);
-                const lng = Cesium.Math.toDegrees(carto.longitude);
-                setClickedLocation({ lat, lng });
+                const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+                setClickedLocation({
+                  lat: Cesium.Math.toDegrees(cartographic.latitude),
+                  lng: Cesium.Math.toDegrees(cartographic.longitude),
+                });
               } else {
                 selectSatellite(null);
               }
@@ -313,22 +517,22 @@ export default function CesiumGlobe({
 
       void (async () => {
         try {
-          const tmsUrl = Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII');
-          const provider = await Cesium.TileMapServiceImageryProvider.fromUrl(tmsUrl);
+          const url = Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII');
+          const provider = await Cesium.TileMapServiceImageryProvider.fromUrl(url);
           if (!viewer.isDestroyed()) {
-            const earthLayer = viewer.imageryLayers.addImageryProvider(provider);
-            earthLayer.alpha = 0.96;
-            earthLayer.brightness = 0.65;
-            earthLayer.contrast = 1.2;
-            earthLayer.gamma = 1.02;
-            earthLayer.saturation = 0.15;
-            earthLayer.hue = -0.02;
+            const layer = viewer.imageryLayers.addImageryProvider(provider);
+            layer.alpha = 0.96;
+            layer.brightness = 0.65;
+            layer.contrast = 1.2;
+            layer.gamma = 1.02;
+            layer.saturation = 0.15;
+            layer.hue = -0.02;
             viewer.scene.requestRender();
           }
         } catch {}
 
         try {
-          const countryBorders = await Cesium.GeoJsonDataSource.load(
+          const borders = await Cesium.GeoJsonDataSource.load(
             '/data/ne_110m_admin_0_countries.geojson',
             {
               stroke: Cesium.Color.fromCssColorString(GLOBE_COUNTRY_STROKE).withAlpha(0.35),
@@ -338,7 +542,7 @@ export default function CesiumGlobe({
             }
           );
 
-          for (const entity of countryBorders.entities.values) {
+          for (const entity of borders.entities.values) {
             if (entity.polygon) {
               entity.polygon.material = new Cesium.ColorMaterialProperty(
                 Cesium.Color.TRANSPARENT
@@ -355,8 +559,8 @@ export default function CesiumGlobe({
           }
 
           if (!viewer.isDestroyed()) {
-            viewer.dataSources.add(countryBorders);
-            countryBordersRef.current = countryBorders;
+            viewer.dataSources.add(borders);
+            bordersRef.current = borders;
             viewer.scene.requestRender();
           }
         } catch {}
@@ -373,6 +577,9 @@ export default function CesiumGlobe({
   useEffect(() => {
     void initViewer();
     return () => {
+      clearOrbit();
+      clearCoverage();
+
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -383,55 +590,60 @@ export default function CesiumGlobe({
       }
       clickHandlerRef.current?.destroy();
       clickHandlerRef.current = null;
-      countryBordersRef.current = null;
+      bordersRef.current = null;
       pointMapRef.current.clear();
       pointMotionRef.current.clear();
-      lastSnapshotAtRef.current = null;
+      lastSnapshotRef.current = null;
       pointCollectionRef.current = null;
-      selectedLabelEntityRef.current = null;
+      labelRef.current = null;
+      clickLocationRef.current = null;
       modelEntityRef.current = null;
       prevCameraRef.current = null;
-      coverageEntityRef.current = null;
-      clickedLocationEntityRef.current = null;
 
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
         viewerRef.current.destroy();
         viewerRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clearCoverage, clearOrbit, initViewer]);
 
   useEffect(() => {
     positionsRef.current = useSatelliteStore.getState().positions;
-    const unsub = useSatelliteStore.subscribe((state, prev) => {
+    const unsubscribe = useSatelliteStore.subscribe((state, prev) => {
       positionsRef.current = state.positions;
       if (state.positions === prev.positions) return;
 
       const nowMs = performance.now();
-      const elapsed = lastSnapshotAtRef.current ? nowMs - lastSnapshotAtRef.current : 0;
-      const motionDur = Math.max(120, Math.min(elapsed || 0, 2200));
-      let fresh = false;
+      const elapsed = lastSnapshotRef.current ? nowMs - lastSnapshotRef.current : 0;
+      const durationMs = Math.max(120, Math.min(elapsed || 0, 2200));
+      let hasFreshData = false;
 
-      state.positions.forEach((pos, id) => {
-        if (!hasRenderableCoordinates(pos.lat, pos.lng, pos.alt)) return;
-        const target: RenderPosition = { lat: pos.lat, lng: pos.lng, altKm: pos.alt };
+      state.positions.forEach((position, id) => {
+        if (!hasRenderableCoordinates(position.lat, position.lng, position.alt)) return;
+
+        const target: RenderPosition = {
+          lat: position.lat,
+          lng: position.lng,
+          altKm: position.alt,
+        };
         const existing = pointMotionRef.current.get(id);
         const current = existing ? getMotionPosition(existing, nowMs) : target;
+
         if (!existing || !isSameRenderPosition(existing.to, target)) {
           pointMotionRef.current.set(id, {
             from: current,
             to: target,
             startedAtMs: nowMs,
-            durationMs: existing ? motionDur : 0,
+            durationMs: existing ? durationMs : 0,
           });
-          fresh = true;
+          hasFreshData = true;
         }
       });
 
-      if (fresh) lastSnapshotAtRef.current = nowMs;
+      if (hasFreshData) lastSnapshotRef.current = nowMs;
     });
-    return unsub;
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -457,8 +669,6 @@ export default function CesiumGlobe({
       }
 
       const nowMs = performance.now();
-      const selectedId = selectedSatelliteRef.current?.id ?? null;
-      const selectedMotion = selectedId ? pointMotionRef.current.get(selectedId) : null;
 
       pointMapRef.current.forEach((point, id) => {
         const motion = pointMotionRef.current.get(id);
@@ -471,34 +681,62 @@ export default function CesiumGlobe({
         );
       });
 
-      if (selectedMotion) {
-        const position = getMotionPosition(selectedMotion, nowMs);
-        const cartesian = activeCesium.Cartesian3.fromDegrees(
-          position.lng,
-          position.lat,
-          position.altKm * 1000
-        );
-
-        if (selectedLabelEntityRef.current) {
-          selectedLabelEntityRef.current.position =
-            new activeCesium.ConstantPositionProperty(cartesian);
+      const selectedId = selectedSatelliteRef.current?.id ?? null;
+      if (selectedId && labelRef.current) {
+        const motion = pointMotionRef.current.get(selectedId);
+        if (motion) {
+          const position = getMotionPosition(motion, nowMs);
+          labelRef.current.position = new activeCesium.ConstantPositionProperty(
+            activeCesium.Cartesian3.fromDegrees(
+              position.lng,
+              position.lat,
+              position.altKm * 1000
+            )
+          );
         }
-        if (coverageEntityRef.current) {
-          coverageEntityRef.current.position =
-            new activeCesium.ConstantPositionProperty(
+      }
+
+      const coverageSatId = coverageSatIdRef.current;
+      if (coverageSatId) {
+        const motion = pointMotionRef.current.get(coverageSatId);
+        if (motion) {
+          const position = getMotionPosition(motion, nowMs);
+
+          if (coverageFillRef.current) {
+            coverageFillRef.current.position = new activeCesium.ConstantPositionProperty(
               activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
             );
+          }
+          if (coverageBorderRef.current) {
+            coverageBorderRef.current.position = new activeCesium.ConstantPositionProperty(
+              activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
+            );
+          }
+          if (nadirRef.current) {
+            nadirRef.current.polyline!.positions = new activeCesium.ConstantProperty([
+              activeCesium.Cartesian3.fromDegrees(
+                position.lng,
+                position.lat,
+                position.altKm * 1000
+              ),
+              activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0),
+            ]);
+          }
         }
       }
 
       if (closeUpTrackingRef.current && selectedId) {
         const motion = pointMotionRef.current.get(selectedId);
         if (motion) {
-          const p = getMotionPosition(motion, nowMs);
-          const satPosition = activeCesium.Cartesian3.fromDegrees(
-            p.lng, p.lat, p.altKm * 1000
+          const position = getMotionPosition(motion, nowMs);
+          const satellitePosition = activeCesium.Cartesian3.fromDegrees(
+            position.lng,
+            position.lat,
+            position.altKm * 1000
           );
-          const transform = activeCesium.Transforms.eastNorthUpToFixedFrame(satPosition);
+          const transform = activeCesium.Transforms.eastNorthUpToFixedFrame(
+            satellitePosition
+          );
           activeViewer.camera.lookAtTransform(
             transform,
             new activeCesium.HeadingPitchRange(
@@ -512,29 +750,30 @@ export default function CesiumGlobe({
 
       const timeState = useTimeStore.getState();
       const storeTimeMs = timeState.currentTime.getTime();
-
       if (storeTimeMs !== lastStoreTimeMsRef.current) {
         lastStoreTimeMsRef.current = storeTimeMs;
         lastStoreWallMsRef.current = nowMs;
       }
-      const wallSinceUpdate = nowMs - lastStoreWallMsRef.current;
       const interpolatedMs = timeState.isPlaying
-        ? storeTimeMs + timeState.speed * wallSinceUpdate
+        ? storeTimeMs + timeState.speed * (nowMs - lastStoreWallMsRef.current)
         : storeTimeMs;
       activeViewer.clock.currentTime = activeCesium.JulianDate.fromDate(
         new Date(interpolatedMs)
       );
 
-      const dtSec = Math.min((nowMs - lastFrameMsRef.current) / 1000, 0.05);
+      const deltaSec = Math.min((nowMs - lastFrameMsRef.current) / 1000, 0.05);
       lastFrameMsRef.current = nowMs;
-
-      if (timeState.isPlaying && !isUserInteractingRef.current && !isCloseUpRef.current && dtSec > 0) {
-        const EARTH_DEG_PER_SEC = 360 / 86400;
-        const MAX_DEG_PER_SEC = 2;
-        const deg = Math.min(EARTH_DEG_PER_SEC * timeState.speed, MAX_DEG_PER_SEC);
+      if (
+        timeState.isPlaying &&
+        !userInteractingRef.current &&
+        !isCloseUpRef.current &&
+        deltaSec > 0
+      ) {
         activeViewer.camera.rotate(
           activeCesium.Cartesian3.UNIT_Z,
-          -activeCesium.Math.toRadians(deg * dtSec)
+          -activeCesium.Math.toRadians(
+            Math.min((360 / 86400) * timeState.speed, 2) * deltaSec
+          )
         );
       }
 
@@ -562,13 +801,12 @@ export default function CesiumGlobe({
       viewer.isDestroyed() ||
       !Cesium ||
       !pointCollection
-    )
+    ) {
       return;
+    }
 
-    const currentIds = new Set(satellites.map((s) => s.id));
-    const existingIdsList = Array.from(pointMapRef.current.keys());
-
-    existingIdsList.forEach((id) => {
+    const currentIds = new Set(satellites.map((satellite) => satellite.id));
+    Array.from(pointMapRef.current.keys()).forEach((id) => {
       if (!currentIds.has(id)) {
         const point = pointMapRef.current.get(id);
         if (point) {
@@ -581,72 +819,67 @@ export default function CesiumGlobe({
 
     const nowMs = performance.now();
     const positions = positionsRef.current;
-
     const sharedScale = new Cesium.NearFarScalar(2.0e6, 1.4, 4.2e7, 0.6);
     const sharedTranslucency = new Cesium.NearFarScalar(2.0e6, 1.0, 4.2e7, 0.8);
-
     const colorCache = new Map<string, InstanceType<typeof Cesium.Color>>();
+
     const getColor = (orbitType: string) => {
-      let c = colorCache.get(orbitType);
-      if (!c) {
-        c = Cesium.Color.fromCssColorString(getOrbitPointColor(orbitType));
-        colorCache.set(orbitType, c);
+      let color = colorCache.get(orbitType);
+      if (!color) {
+        color = Cesium.Color.fromCssColorString(getOrbitPointColor(orbitType));
+        colorCache.set(orbitType, color);
       }
-      return c;
+      return color;
     };
 
-    for (const sat of satellites) {
-      const pos = positions.get(sat.id);
-      const lat = pos?.lat ?? sat.latitude;
-      const lng = pos?.lng ?? sat.longitude;
-      const altKm = pos?.alt ?? sat.altitude;
+    for (const satellite of satellites) {
+      const position = positions.get(satellite.id);
+      const lat = position?.lat ?? satellite.latitude;
+      const lng = position?.lng ?? satellite.longitude;
+      const altKm = position?.alt ?? satellite.altitude;
 
       if (!hasRenderableCoordinates(lat, lng, altKm)) {
-        const p = pointMapRef.current.get(sat.id);
-        if (p) {
-          pointCollection.remove(p);
-          pointMapRef.current.delete(sat.id);
+        const point = pointMapRef.current.get(satellite.id);
+        if (point) {
+          pointCollection.remove(point);
+          pointMapRef.current.delete(satellite.id);
         }
-        pointMotionRef.current.delete(sat.id);
+        pointMotionRef.current.delete(satellite.id);
         continue;
       }
 
-      const isSelected = selectedSatellite?.id === sat.id;
-      const baseColor = getColor(sat.orbitType);
-      const pointColor = baseColor.withAlpha(isSelected ? 1.0 : 0.85);
-      const pixelSize = isSelected ? 9 : 6;
-      const outlineWidth = isSelected ? 2 : 0.5;
-      const outlineColor = isSelected
-        ? Cesium.Color.WHITE.withAlpha(0.95)
-        : baseColor.withAlpha(0.4);
-
-      const existingPoint = pointMapRef.current.get(sat.id);
+      const isSelected = selectedSatellite?.id === satellite.id;
+      const baseColor = getColor(satellite.orbitType);
+      const existingPoint = pointMapRef.current.get(satellite.id);
 
       if (existingPoint) {
-        existingPoint.pixelSize = pixelSize;
-        existingPoint.color = pointColor;
-        existingPoint.outlineWidth = outlineWidth;
-        existingPoint.outlineColor = outlineColor;
+        existingPoint.pixelSize = isSelected ? 9 : 6;
+        existingPoint.color = baseColor.withAlpha(isSelected ? 1.0 : 0.85);
+        existingPoint.outlineWidth = isSelected ? 2 : 0.5;
+        existingPoint.outlineColor = isSelected
+          ? Cesium.Color.WHITE.withAlpha(0.95)
+          : baseColor.withAlpha(0.4);
+        existingPoint.disableDepthTestDistance = 0;
         existingPoint.show = true;
       } else {
-        const initPos = { lat, lng, altKm };
         const point = pointCollection.add({
-          id: sat.id,
+          id: satellite.id,
           position: Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
-          pixelSize,
-          color: pointColor,
-          outlineColor,
-          outlineWidth,
+          pixelSize: isSelected ? 9 : 6,
+          color: baseColor.withAlpha(isSelected ? 1.0 : 0.85),
+          outlineColor: isSelected
+            ? Cesium.Color.WHITE.withAlpha(0.95)
+            : baseColor.withAlpha(0.4),
+          outlineWidth: isSelected ? 2 : 0.5,
           disableDepthTestDistance: 0,
           scaleByDistance: sharedScale,
           translucencyByDistance: sharedTranslucency,
         });
-        pointMapRef.current.set(sat.id, point);
-
-        if (!pointMotionRef.current.has(sat.id)) {
-          pointMotionRef.current.set(sat.id, {
-            from: initPos,
-            to: initPos,
+        pointMapRef.current.set(satellite.id, point);
+        if (!pointMotionRef.current.has(satellite.id)) {
+          pointMotionRef.current.set(satellite.id, {
+            from: { lat, lng, altKm },
+            to: { lat, lng, altKm },
             startedAtMs: nowMs,
             durationMs: 0,
           });
@@ -654,19 +887,19 @@ export default function CesiumGlobe({
       }
     }
 
-    if (selectedLabelEntityRef.current) {
-      viewer.entities.remove(selectedLabelEntityRef.current);
-      selectedLabelEntityRef.current = null;
+    if (labelRef.current) {
+      viewer.entities.remove(labelRef.current);
+      labelRef.current = null;
     }
 
     if (selectedSatellite) {
-      const pos = positions.get(selectedSatellite.id);
-      const lat = pos?.lat ?? selectedSatellite.latitude;
-      const lng = pos?.lng ?? selectedSatellite.longitude;
-      const altKm = pos?.alt ?? selectedSatellite.altitude;
+      const position = positions.get(selectedSatellite.id);
+      const lat = position?.lat ?? selectedSatellite.latitude;
+      const lng = position?.lng ?? selectedSatellite.longitude;
+      const altKm = position?.alt ?? selectedSatellite.altitude;
 
       if (hasRenderableCoordinates(lat, lng, altKm)) {
-        selectedLabelEntityRef.current = viewer.entities.add({
+        labelRef.current = viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
           label: {
             text: selectedSatellite.name,
@@ -688,44 +921,13 @@ export default function CesiumGlobe({
   }, [satellites, selectedSatellite, viewerState]);
 
   useEffect(() => {
-    const viewer = viewerRef.current;
-    const Cesium = cesiumRef.current;
-    if (viewerState !== 'ready' || !viewer || viewer.isDestroyed() || !Cesium) return;
+    clearOrbit();
+    clearCoverage();
 
-    if (coverageEntityRef.current) {
-      viewer.entities.remove(coverageEntityRef.current);
-      coverageEntityRef.current = null;
-    }
+    if (viewerState !== 'ready' || !selectedSatellite) return;
 
-    if (!selectedSatellite) return;
-
-    const pos = positionsRef.current.get(selectedSatellite.id);
-    const lat = pos?.lat ?? selectedSatellite.latitude;
-    const lng = pos?.lng ?? selectedSatellite.longitude;
-    const altKm = pos?.alt ?? selectedSatellite.altitude;
-
-    if (!hasRenderableCoordinates(lat, lng, altKm)) return;
-
-    const halfAngle = Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
-    const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
-    const baseColor = getOrbitPointColor(selectedSatellite.orbitType);
-    const color = Cesium.Color.fromCssColorString(baseColor);
-
-    coverageEntityRef.current = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
-      ellipse: {
-        semiMajorAxis: groundRadiusMeters,
-        semiMinorAxis: groundRadiusMeters,
-        material: color.withAlpha(0.12),
-        outline: true,
-        outlineColor: color.withAlpha(0.6),
-        outlineWidth: 2,
-        height: 500,
-      },
-    });
-
-    viewer.scene.requestRender();
-  }, [selectedSatellite, viewerState]);
+    drawInstant(selectedSatellite);
+  }, [selectedSatellite, viewerState, clearCoverage, clearOrbit, drawInstant]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -733,15 +935,18 @@ export default function CesiumGlobe({
     const clickedLocation = useSatelliteStore.getState().clickedLocation;
     if (viewerState !== 'ready' || !viewer || viewer.isDestroyed() || !Cesium) return;
 
-    if (clickedLocationEntityRef.current) {
-      viewer.entities.remove(clickedLocationEntityRef.current);
-      clickedLocationEntityRef.current = null;
+    if (clickLocationRef.current) {
+      viewer.entities.remove(clickLocationRef.current);
+      clickLocationRef.current = null;
     }
-
     if (!clickedLocation) return;
 
-    clickedLocationEntityRef.current = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(clickedLocation.lng, clickedLocation.lat, 0),
+    clickLocationRef.current = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(
+        clickedLocation.lng,
+        clickedLocation.lat,
+        0
+      ),
       point: {
         pixelSize: 10,
         color: Cesium.Color.fromCssColorString('#f59e0b'),
@@ -758,103 +963,64 @@ export default function CesiumGlobe({
         height: 0,
       },
     });
-
     viewer.scene.requestRender();
   }, [viewerState]);
 
   useEffect(() => {
-    const unsub = useSatelliteStore.subscribe((state, prev) => {
-      if (state.clickedLocation !== prev.clickedLocation) {
-        const viewer = viewerRef.current;
-        const Cesium = cesiumRef.current;
-        if (!viewer || viewer.isDestroyed() || !Cesium) return;
+    const unsubscribe = useSatelliteStore.subscribe((state, prev) => {
+      if (state.clickedLocation === prev.clickedLocation) return;
 
-        if (clickedLocationEntityRef.current) {
-          viewer.entities.remove(clickedLocationEntityRef.current);
-          clickedLocationEntityRef.current = null;
-        }
+      const viewer = viewerRef.current;
+      const Cesium = cesiumRef.current;
+      if (!viewer || viewer.isDestroyed() || !Cesium) return;
 
-        const loc = state.clickedLocation;
-        if (!loc) { viewer.scene.requestRender(); return; }
-
-        clickedLocationEntityRef.current = viewer.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(loc.lng, loc.lat, 0),
-          point: {
-            pixelSize: 10,
-            color: Cesium.Color.fromCssColorString('#f59e0b'),
-            outlineColor: Cesium.Color.WHITE,
-            outlineWidth: 2,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          },
-          ellipse: {
-            semiMajorAxis: 100_000,
-            semiMinorAxis: 100_000,
-            material: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.1),
-            outline: true,
-            outlineColor: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.3),
-            height: 0,
-          },
-        });
-
-        viewer.scene.requestRender();
+      if (clickLocationRef.current) {
+        viewer.entities.remove(clickLocationRef.current);
+        clickLocationRef.current = null;
       }
+
+      const clickedLocation = state.clickedLocation;
+      if (!clickedLocation) {
+        viewer.scene.requestRender();
+        return;
+      }
+
+      clickLocationRef.current = viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(
+          clickedLocation.lng,
+          clickedLocation.lat,
+          0
+        ),
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString('#f59e0b'),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+        ellipse: {
+          semiMajorAxis: 100_000,
+          semiMinorAxis: 100_000,
+          material: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.1),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString('#f59e0b').withAlpha(0.3),
+          height: 0,
+        },
+      });
+      viewer.scene.requestRender();
     });
-    return unsub;
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    const viewer = viewerRef.current;
-    const Cesium = cesiumRef.current;
-    if (viewerState !== 'ready' || !viewer || viewer.isDestroyed() || !Cesium) return;
-
-    if (orbitEntityRef.current) {
-      viewer.entities.remove(orbitEntityRef.current);
-      orbitEntityRef.current = null;
-      viewer.scene.requestRender();
-    }
-
-    if (!selectedSatellite) return;
-
-    const sat = selectedSatellite;
-    if (!isRenderableAltitudeKm(sat.altitude)) return;
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const orbitData = await fetchOrbit(sat.id, 3);
-        if (cancelled || !viewerRef.current || viewerRef.current.isDestroyed()) return;
-        if (!orbitData || orbitData.length < 2) return;
-
-        const orbitPositions = orbitData.map((pt) =>
-          Cesium.Cartesian3.fromDegrees(pt.lng, pt.lat, (pt.alt ?? sat.altitude) * 1000)
-        );
-
-        const orbitColor = Cesium.Color.fromCssColorString(
-          getOrbitPointColor(sat.orbitType)
-        ).withAlpha(0.85);
-
-        orbitEntityRef.current = viewer.entities.add({
-          polyline: {
-            positions: orbitPositions,
-            width: 2,
-            material: new Cesium.ColorMaterialProperty(orbitColor),
-            clampToGround: false,
-          },
-        });
-
-        viewer.scene.requestRender();
-      } catch (err) {
-        console.warn('Failed to fetch orbit:', err);
+    const unsubscribe = useSatelliteStore.subscribe((state, prev) => {
+      if (
+        state.isCloseUp === prev.isCloseUp &&
+        state.selectedSatellite === prev.selectedSatellite
+      ) {
+        return;
       }
-    })();
-
-    return () => { cancelled = true; };
-  }, [selectedSatellite, viewerState]);
-
-  useEffect(() => {
-    const unsub = useSatelliteStore.subscribe((state, prev) => {
-      if (state.isCloseUp === prev.isCloseUp && state.selectedSatellite === prev.selectedSatellite) return;
 
       const viewer = viewerRef.current;
       const Cesium = cesiumRef.current;
@@ -873,7 +1039,9 @@ export default function CesiumGlobe({
           modelEntityRef.current = null;
         }
 
-        pointMapRef.current.forEach((point) => { point.show = true; });
+        pointMapRef.current.forEach((point) => {
+          point.show = true;
+        });
 
         viewer.scene.globe.depthTestAgainstTerrain = true;
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 7_500_000;
@@ -896,11 +1064,11 @@ export default function CesiumGlobe({
       }
 
       if (wantCloseUp && !wasCloseUp) {
-        const sat = state.selectedSatellite!;
-        const pos = positionsRef.current.get(sat.id);
-        const lat = pos?.lat ?? sat.latitude;
-        const lng = pos?.lng ?? sat.longitude;
-        const altKm = pos?.alt ?? sat.altitude;
+        const satellite = state.selectedSatellite!;
+        const position = positionsRef.current.get(satellite.id);
+        const lat = position?.lat ?? satellite.latitude;
+        const lng = position?.lng ?? satellite.longitude;
+        const altKm = position?.alt ?? satellite.altitude;
 
         if (!hasRenderableCoordinates(lat, lng, altKm)) return;
 
@@ -913,38 +1081,49 @@ export default function CesiumGlobe({
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 100;
         viewer.scene.globe.depthTestAgainstTerrain = false;
 
-        pointMapRef.current.forEach((point) => { point.show = false; });
+        pointMapRef.current.forEach((point) => {
+          point.show = false;
+        });
 
-        const satId = sat.id;
+        const satelliteId = satellite.id;
         const modelScale = altKm < 2000 ? 2500 : altKm < 20000 ? 7500 : 20000;
         const flyRange = altKm < 2000 ? 4_000_000 : altKm < 20000 ? 8_000_000 : 15_000_000;
         closeUpRangeRef.current = flyRange;
 
-        const positionCb = new Cesium.CallbackProperty(() => {
-          const motion = pointMotionRef.current.get(satId);
+        const positionProperty = new Cesium.CallbackProperty(() => {
+          const motion = pointMotionRef.current.get(satelliteId);
           if (motion) {
-            const p = getMotionPosition(motion, performance.now());
-            return Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altKm * 1000);
+            const interpolated = getMotionPosition(motion, performance.now());
+            return Cesium.Cartesian3.fromDegrees(
+              interpolated.lng,
+              interpolated.lat,
+              interpolated.altKm * 1000
+            );
           }
           return Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
         }, false);
 
-        const orientCb = new Cesium.CallbackProperty(() => {
+        const orientationProperty = new Cesium.CallbackProperty(() => {
           const t = performance.now() / 1000;
           const heading = Cesium.Math.toRadians((t * 5) % 360);
-          const motion = pointMotionRef.current.get(satId);
-          const p = motion ? getMotionPosition(motion, performance.now()) : { lat, lng, altKm };
-          const c = Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altKm * 1000);
+          const motion = pointMotionRef.current.get(satelliteId);
+          const interpolated = motion
+            ? getMotionPosition(motion, performance.now())
+            : { lat, lng, altKm };
+          const cartesian = Cesium.Cartesian3.fromDegrees(
+            interpolated.lng,
+            interpolated.lat,
+            interpolated.altKm * 1000
+          );
           return Cesium.Transforms.headingPitchRollQuaternion(
-            c,
+            cartesian,
             new Cesium.HeadingPitchRoll(heading, 0, 0)
           );
         }, false);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         modelEntityRef.current = viewer.entities.add({
-          position: positionCb as any,
-          orientation: orientCb as any,
+          position: positionProperty as never,
+          orientation: orientationProperty as never,
           model: {
             uri: '/satellite.glb',
             scale: modelScale,
@@ -954,27 +1133,29 @@ export default function CesiumGlobe({
         });
 
         const destination = Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
-        viewer.camera.flyToBoundingSphere(
-          new Cesium.BoundingSphere(destination, 1),
-          {
-            offset: new Cesium.HeadingPitchRange(
-              Cesium.Math.toRadians(0),
-              Cesium.Math.toRadians(-80),
-              flyRange
-            ),
-            duration: 1.5,
-            complete: () => {
-              if (viewerRef.current && !viewerRef.current.isDestroyed() && isCloseUpRef.current) {
-                closeUpTrackingRef.current = true;
-              }
-            },
-          }
-        );
+        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(destination, 1), {
+          offset: new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(0),
+            Cesium.Math.toRadians(-80),
+            flyRange
+          ),
+          duration: 1.5,
+          complete: () => {
+            if (
+              viewerRef.current &&
+              !viewerRef.current.isDestroyed() &&
+              isCloseUpRef.current
+            ) {
+              closeUpTrackingRef.current = true;
+            }
+          },
+        });
 
         viewer.scene.requestRender();
       }
     });
-    return unsub;
+
+    return unsubscribe;
   }, []);
 
   return (
@@ -985,9 +1166,7 @@ export default function CesiumGlobe({
         <div className="absolute inset-0 flex items-center justify-center bg-cosmos-bg/50">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
-            <p className="text-[#9ca3af] text-sm">
-              {'\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0433\u043B\u043E\u0431\u0443\u0441\u0430...'}
-            </p>
+            <p className="text-[#9ca3af] text-sm">Загрузка глобуса...</p>
           </div>
         </div>
       )}
@@ -999,8 +1178,7 @@ export default function CesiumGlobe({
               Не удалось инициализировать 3D-глобус
             </p>
             <p className="mt-2 text-xs leading-relaxed text-[#9ca3af]">
-              {viewerError ??
-                'Проверь поддержку WebGL в браузере и перезагрузи страницу.'}
+              {viewerError ?? 'Проверь поддержку WebGL в браузере и перезагрузи страницу.'}
             </p>
           </div>
         </div>

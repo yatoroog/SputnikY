@@ -17,6 +17,12 @@ export interface Satellite {
   epoch: string;
 }
 
+export interface CatalogStatus {
+  source: string;
+  lastSyncAt: string | null;
+  note: string | null;
+}
+
 export interface SatellitePosition {
   id: string;
   lat: number;
@@ -65,7 +71,7 @@ export interface TimeControlState {
 }
 
 // API Endpoints
-// GET  /api/satellites          — список спутников с фильтрами (query: country, orbitType, purpose, search)
+// GET  /api/satellites          — список спутников с фильтрами + catalog_status (query: country, orbitType, purpose, search)
 // GET  /api/satellites/:id      — детали спутника
 // GET  /api/satellites/:id/orbit — траектория орбиты (query: hours=2)
 // GET  /api/passes              — пролёты над точкой (query: lat, lng, hours=24)

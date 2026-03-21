@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/satellite-tracker/backend/internal/api"
+	"github.com/satellite-tracker/backend/internal/models"
 	"github.com/satellite-tracker/backend/internal/n2yo"
 	"github.com/satellite-tracker/backend/internal/satellite"
 	"github.com/satellite-tracker/backend/internal/tle"
@@ -34,18 +36,22 @@ func main() {
 	service := satellite.NewService()
 
 	// --- Load satellites: try N2YO API first, fall back to local TLE (~500 sats) ---
-	n2yoKey := "97BW46-YA9RMR-F3SALS-5OWE"
+	n2yoKey := os.Getenv("N2YO_API_KEY")
+	if n2yoKey == "" {
+		n2yoKey = "97BW46-YA9RMR-F3SALS-5OWE"
+	}
 	n2yoClient := n2yo.NewClient(n2yoKey)
 
 	log.Info().Msg("Trying N2YO API for real-time satellite data...")
 	tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
 	if err != nil {
 		log.Warn().Err(err).Msg("N2YO fetch failed (likely rate limit), using local TLE file")
-		loadLocalTLE(service)
+		loadLocalTLE(service, fmt.Sprintf("N2YO startup fetch failed: %v", err))
 	} else {
 		if err := service.LoadFromTLE(tleData); err != nil {
 			log.Fatal().Err(err).Msg("Failed to initialize satellites from N2YO data")
 		}
+		service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
 		log.Info().Int("satellites", len(tleData)).Msg("Initial satellite data loaded from N2YO")
 	}
 
@@ -113,12 +119,24 @@ func main() {
 				log.Info().Msg("Refreshing satellite data from N2YO...")
 				freshData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
 				if err != nil {
+					service.UpdateCatalogNote(fmt.Sprintf(
+						"N2YO refresh failed at %s: %v",
+						time.Now().UTC().Format(time.RFC3339),
+						err,
+					))
 					log.Warn().Err(err).Msg("N2YO refresh failed, keeping current data")
 					continue
 				}
 				if err := service.ReplaceFromTLE(freshData); err != nil {
 					log.Warn().Err(err).Msg("Failed to replace satellites after N2YO refresh")
+					service.UpdateCatalogNote(fmt.Sprintf(
+						"N2YO refresh replace failed at %s: %v",
+						time.Now().UTC().Format(time.RFC3339),
+						err,
+					))
+					continue
 				}
+				service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
 			case <-stopRefresh:
 				log.Info().Msg("N2YO refresh worker stopped")
 				return
@@ -149,7 +167,7 @@ func main() {
 }
 
 // loadLocalTLE loads satellites from a local TLE file (fallback).
-func loadLocalTLE(service *satellite.SatelliteService) {
+func loadLocalTLE(service *satellite.SatelliteService, note string) {
 	tleDataPath := "data/stations.tle"
 	if envPath := os.Getenv("TLE_DATA_PATH"); envPath != "" {
 		tleDataPath = envPath
@@ -167,6 +185,7 @@ func loadLocalTLE(service *satellite.SatelliteService) {
 	if err := service.LoadFromTLE(tleData); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize satellites from TLE data")
 	}
+	service.SetCatalogStatus(models.CatalogSourceLocalTLE, time.Now().UTC(), note)
 
 	log.Info().Int("satellites", len(tleData)).Msg("Initial TLE data loaded from local file")
 }
