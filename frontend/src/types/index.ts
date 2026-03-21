@@ -14,6 +14,12 @@ export interface Satellite {
   epoch: string;
 }
 
+export interface CatalogStatus {
+  source: string;
+  lastSyncAt: string | null;
+  note: string | null;
+}
+
 export interface SatellitePosition {
   id: string;
   lat: number;

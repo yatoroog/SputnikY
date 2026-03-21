@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import type { Satellite, SatellitePosition, AreaPass } from '@/types';
+import type { Satellite, SatellitePosition, AreaPass, CatalogStatus } from '@/types';
 
 interface SatelliteStore {
   satellites: Satellite[];
+  catalogStatus: CatalogStatus | null;
   selectedSatellite: Satellite | null;
   positions: Map<string, SatellitePosition>;
   loading: boolean;
@@ -14,6 +15,7 @@ interface SatelliteStore {
   areaPassesLoading: boolean;
 
   setSatellites: (satellites: Satellite[]) => void;
+  setCatalogStatus: (catalogStatus: CatalogStatus | null) => void;
   selectSatellite: (satellite: Satellite | null) => void;
   updatePositions: (positions: SatellitePosition[]) => void;
   setLoading: (loading: boolean) => void;
@@ -27,6 +29,7 @@ interface SatelliteStore {
 
 export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   satellites: [],
+  catalogStatus: null,
   selectedSatellite: null,
   positions: new Map(),
   loading: false,
@@ -38,6 +41,8 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   areaPassesLoading: false,
 
   setSatellites: (satellites: Satellite[]) => set({ satellites }),
+
+  setCatalogStatus: (catalogStatus: CatalogStatus | null) => set({ catalogStatus }),
 
   selectSatellite: (satellite: Satellite | null) =>
     set({ selectedSatellite: satellite, clickedLocation: null, areaPasses: [], isCloseUp: false }),

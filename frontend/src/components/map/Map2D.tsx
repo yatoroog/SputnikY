@@ -73,6 +73,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   const prevSelectedIdRef = useRef<string | null>(null);
   const prevMapStateRef = useRef<{ center: number[]; zoom: number } | null>(null);
   const markerClickedRef = useRef(false);
+  const currentStyleRef = useRef<string | null>(null);
 
   const [mapReady, setMapReady] = useState(false);
 
@@ -97,12 +98,14 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       mapglRef.current = mapgl;
 
       const currentTheme = useThemeStore.getState().isDark;
+      const initStyle = currentTheme ? STYLE_DARK : STYLE_LIGHT;
+      currentStyleRef.current = initStyle;
       const map = new mapgl.Map(containerRef.current, {
         key: API_KEY,
         center: [60, 30],
         zoom: 3,
         zoomControl: true,
-        style: currentTheme ? STYLE_DARK : STYLE_LIGHT,
+        style: initStyle,
         defaultBackgroundColor: currentTheme ? '#1C2429' : '#F5F2E0',
       });
 
@@ -139,7 +142,10 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
   useEffect(() => {
     if (!mapRef.current || !mapReady) return;
-    mapRef.current.setStyleById(isDark ? STYLE_DARK : STYLE_LIGHT);
+    const targetStyle = isDark ? STYLE_DARK : STYLE_LIGHT;
+    if (currentStyleRef.current === targetStyle) return;
+    currentStyleRef.current = targetStyle;
+    mapRef.current.setStyleById(targetStyle);
   }, [isDark, mapReady]);
 
   useEffect(() => {

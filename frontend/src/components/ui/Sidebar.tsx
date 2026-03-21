@@ -14,14 +14,64 @@ import FilterPanel from './FilterPanel';
 import TleUploader from './TleUploader';
 import type { Satellite } from '@/types';
 
+function getSourceLabel(source: string | null | undefined): string {
+  switch (source) {
+    case 'n2yo':
+      return 'N2YO';
+    case 'local_tle':
+      return 'Local TLE';
+    case 'uploaded_tle':
+      return 'TLE Upload';
+    case 'preset':
+      return 'TLE Preset';
+    default:
+      return 'Unknown';
+  }
+}
+
+function getSourceTone(source: string | null | undefined): string {
+  switch (source) {
+    case 'n2yo':
+      return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300';
+    case 'local_tle':
+      return 'border-amber-400/20 bg-amber-400/10 text-amber-300';
+    case 'uploaded_tle':
+    case 'preset':
+      return 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300';
+    default:
+      return 'border-white/10 bg-white/5 text-[#94a3c0]';
+  }
+}
+
+function formatStatusTime(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
   const satellites = useSatelliteStore((state) => state.satellites);
+  const catalogStatus = useSatelliteStore((state) => state.catalogStatus);
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
   const loading = useSatelliteStore((state) => state.loading);
   const error = useSatelliteStore((state) => state.error);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
+  const statusTimestamp = formatStatusTime(catalogStatus?.lastSyncAt);
 
   const handleSelect = useCallback(
     (satellite: Satellite) => {
@@ -76,6 +126,30 @@ export default function Sidebar() {
               <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-[#637196]">
                 Орбитальный каталог
               </p>
+              {catalogStatus && (
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                        getSourceTone(catalogStatus.source)
+                      )}
+                    >
+                      {getSourceLabel(catalogStatus.source)}
+                    </span>
+                    {statusTimestamp && (
+                      <span className="text-[11px] text-[#7f8ca7]">
+                        {statusTimestamp}
+                      </span>
+                    )}
+                  </div>
+                  {catalogStatus.note && (
+                    <p className="max-w-[260px] text-[11px] leading-relaxed text-[#94a3c0]">
+                      {catalogStatus.note}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">

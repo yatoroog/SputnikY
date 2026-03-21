@@ -14,15 +14,28 @@ import (
 
 // SatelliteService manages all tracked satellites and their state.
 type SatelliteService struct {
-	mu         sync.RWMutex
-	satellites map[string]*models.Satellite
+	mu            sync.RWMutex
+	satellites    map[string]*models.Satellite
+	catalogStatus models.CatalogStatus
 }
 
 // NewService creates a new SatelliteService.
 func NewService() *SatelliteService {
 	return &SatelliteService{
 		satellites: make(map[string]*models.Satellite),
+		catalogStatus: models.CatalogStatus{
+			Source: models.CatalogSourceUnknown,
+		},
 	}
+}
+
+func cloneTimePtr(ts *time.Time) *time.Time {
+	if ts == nil {
+		return nil
+	}
+
+	value := ts.UTC()
+	return &value
 }
 
 // LoadFromTLE creates Satellite objects from parsed TLE data and propagates initial positions.
@@ -43,12 +56,9 @@ func (s *SatelliteService) LoadFromTLE(tleData []models.TLEData) error {
 		intlDesig := tle.ExtractIntlDesignator(td.Line1)
 		periodMinutes, inclination, eccentricity := ExtractOrbitalParams(td)
 		orbitType := DetermineOrbitType(periodMinutes, eccentricity)
-		country := DetermineCountry(intlDesig)
-
-		// Determine purpose from name
+		country := DetermineCountry(td.Name, intlDesig)
 		purpose := determinePurpose(td.Name)
 
-		// Parse epoch from line1 (chars 18-32)
 		epoch := ""
 		if len(td.Line1) >= 32 {
 			epoch = strings.TrimSpace(td.Line1[18:32])
@@ -109,7 +119,7 @@ func (s *SatelliteService) ReplaceFromTLE(tleData []models.TLEData) error {
 		intlDesig := tle.ExtractIntlDesignator(td.Line1)
 		periodMinutes, inclination, eccentricity := ExtractOrbitalParams(td)
 		orbitType := DetermineOrbitType(periodMinutes, eccentricity)
-		country := DetermineCountry(intlDesig)
+		country := DetermineCountry(td.Name, intlDesig)
 		purpose := determinePurpose(td.Name)
 
 		epoch := ""
@@ -266,6 +276,39 @@ func (s *SatelliteService) GetPositionsAtTime(t time.Time) []models.SatellitePos
 	}
 
 	return positions
+}
+
+// SetCatalogStatus updates metadata about the last successful catalog load.
+func (s *SatelliteService) SetCatalogStatus(source string, syncedAt time.Time, note string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	timestamp := syncedAt.UTC()
+	s.catalogStatus = models.CatalogStatus{
+		Source:     source,
+		LastSyncAt: &timestamp,
+		Note:       note,
+	}
+}
+
+// UpdateCatalogNote updates the catalog note while preserving the source and last sync timestamp.
+func (s *SatelliteService) UpdateCatalogNote(note string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.catalogStatus.Note = note
+}
+
+// GetCatalogStatus returns a snapshot of the current catalog metadata.
+func (s *SatelliteService) GetCatalogStatus() models.CatalogStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return models.CatalogStatus{
+		Source:     s.catalogStatus.Source,
+		LastSyncAt: cloneTimePtr(s.catalogStatus.LastSyncAt),
+		Note:       s.catalogStatus.Note,
+	}
 }
 
 // matchesFilters checks if a satellite matches all non-empty filter criteria.
