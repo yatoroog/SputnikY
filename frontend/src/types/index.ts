@@ -14,6 +14,38 @@ export interface Satellite {
   epoch: string;
 }
 
+export interface MetricRange {
+  min: number;
+  max: number;
+}
+
+export interface BreakdownItem {
+  label: string;
+  count: number;
+}
+
+export interface SatelliteGrouping {
+  id: string;
+  label: string;
+  satellites: Satellite[];
+  satelliteCount: number;
+  countries: string[];
+  purposes: string[];
+  orbitTypes: string[];
+  countryBreakdown: BreakdownItem[];
+  purposeBreakdown: BreakdownItem[];
+  orbitTypeBreakdown: BreakdownItem[];
+  altitudeRange: MetricRange | null;
+  inclinationRange: MetricRange | null;
+  periodRange: MetricRange | null;
+  velocityRange: MetricRange | null;
+  averageAltitude: number;
+  averageInclination: number;
+  averagePeriod: number;
+  averageVelocity: number;
+  primaryOrbitType: string;
+}
+
 export interface CatalogStatus {
   source: string;
   lastSyncAt: string | null;

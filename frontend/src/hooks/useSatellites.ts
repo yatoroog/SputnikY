@@ -4,7 +4,22 @@ import { useEffect, useCallback } from 'react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useFilterStore } from '@/store/filterStore';
 import { fetchSatelliteCatalog } from '@/lib/api';
-import type { FilterParams } from '@/types';
+import type { FilterFacets, FilterParams, Satellite } from '@/types';
+
+function hasFilterFacets(facets: FilterFacets | null): facets is FilterFacets {
+  return !!facets && (facets.countries.length > 0 || facets.purposes.length > 0);
+}
+
+function deriveFilterFacets(satellites: Satellite[]): FilterFacets {
+  return {
+    countries: Array.from(
+      new Set(satellites.map((satellite) => satellite.country).filter(Boolean))
+    ).sort((left, right) => left.localeCompare(right, 'ru')),
+    purposes: Array.from(
+      new Set(satellites.map((satellite) => satellite.purpose).filter(Boolean))
+    ).sort((left, right) => left.localeCompare(right, 'ru')),
+  };
+}
 
 export function useSatellites() {
   const setSatellites = useSatelliteStore((state) => state.setSatellites);
@@ -28,7 +43,15 @@ export function useSatellites() {
       const data = await fetchSatelliteCatalog(filters);
       setSatellites(data.satellites);
       setCatalogStatus(data.catalogStatus);
-      setFilterFacets(data.filterFacets);
+
+      const currentFacets = useSatelliteStore.getState().filterFacets;
+      const hasActiveCatalogFilters = Boolean(country || orbitType || purpose || search);
+
+      if (hasFilterFacets(data.filterFacets)) {
+        setFilterFacets(data.filterFacets);
+      } else if (!hasActiveCatalogFilters || !hasFilterFacets(currentFacets)) {
+        setFilterFacets(deriveFilterFacets(data.satellites));
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u0441\u043F\u0443\u0442\u043D\u0438\u043A\u043E\u0432';

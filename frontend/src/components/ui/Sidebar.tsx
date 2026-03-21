@@ -11,6 +11,7 @@ import { useSatelliteStore } from '@/store/satelliteStore';
 import { cn, getOrbitTypeColor, formatAltitude } from '@/lib/utils';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
+import GroupingSelector from './GroupingSelector';
 import TleUploader from './TleUploader';
 import type { Satellite } from '@/types';
 
@@ -62,6 +63,19 @@ function formatStatusTime(value: string | null | undefined): string | null {
   });
 }
 
+function getVisibleCatalogNote(note: string | null | undefined): string | null {
+  if (!note) {
+    return null;
+  }
+
+  const normalized = note.trim();
+  if (normalized.startsWith('N2YO startup fetch skipped:')) {
+    return null;
+  }
+
+  return normalized;
+}
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
@@ -72,6 +86,7 @@ export default function Sidebar() {
   const error = useSatelliteStore((state) => state.error);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const statusTimestamp = formatStatusTime(catalogStatus?.lastSyncAt);
+  const visibleCatalogNote = getVisibleCatalogNote(catalogStatus?.note);
 
   const handleSelect = useCallback(
     (satellite: Satellite) => {
@@ -143,9 +158,9 @@ export default function Sidebar() {
                       </span>
                     )}
                   </div>
-                  {catalogStatus.note && (
+                  {visibleCatalogNote && (
                     <p className="max-w-[260px] text-[11px] leading-relaxed text-[#94a3c0]">
-                      {catalogStatus.note}
+                      {visibleCatalogNote}
                     </p>
                   )}
                 </div>
@@ -185,66 +200,76 @@ export default function Sidebar() {
         {/* Glass divider */}
         <div className="mx-5 h-px glass-divider-h" />
 
-        {/* Search */}
-        <div className="px-4 py-4">
-          <SearchBar />
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+          {/* Search */}
+          <div className="px-4 py-4">
+            <SearchBar />
+          </div>
 
-        {/* Glass divider */}
-        <div className="mx-5 h-px glass-divider-h" />
+          {/* Glass divider */}
+          <div className="mx-5 h-px glass-divider-h" />
 
-        {/* Filters */}
-        <div className="px-4 py-4">
-          <FilterPanel />
-        </div>
+          {/* Filters */}
+          <div className="px-4 py-4">
+            <FilterPanel />
+          </div>
 
-        {/* TLE Uploader */}
-        {showUploader && (
-          <>
-            <div className="mx-5 h-px glass-divider-h" />
-            <div className="px-4 py-4">
-              <TleUploader />
-            </div>
-          </>
-        )}
+          {/* Glass divider */}
+          <div className="mx-5 h-px glass-divider-h" />
 
-        {/* Glass divider */}
-        <div className="mx-5 h-px glass-divider-h" />
+          {/* Grouping comparison */}
+          <div className="px-4 py-4">
+            <GroupingSelector />
+          </div>
 
-        {/* Satellite list */}
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-8 h-8 border-2 border-accent-cyan/50 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
-              <AlertTriangle size={28} className="text-amber-400" />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-[#eef2ff]">
-                  Не удалось загрузить спутники
-                </p>
-                <p className="text-xs leading-relaxed text-[#94a3c0]">{error}</p>
+          {/* TLE Uploader */}
+          {showUploader && (
+            <>
+              <div className="mx-5 h-px glass-divider-h" />
+              <div className="px-4 py-4">
+                <TleUploader />
               </div>
-            </div>
-          ) : satellites.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-[#94a3c0]">
-              <SatelliteIcon size={32} className="mb-3 opacity-40" />
-              <p className="text-sm">{'Спутники не найдены'}</p>
-              <p className="text-xs mt-1">{'Попробуйте изменить фильтры'}</p>
-            </div>
-          ) : (
-            <div className="space-y-2 pb-2">
-              {satellites.map((sat) => (
-                <SatelliteListItem
-                  key={sat.id}
-                  satellite={sat}
-                  isSelected={selectedSatellite?.id === sat.id}
-                  onSelect={handleSelect}
-                />
-              ))}
-            </div>
+            </>
           )}
+
+          {/* Glass divider */}
+          <div className="mx-5 h-px glass-divider-h" />
+
+          {/* Satellite list */}
+          <div className="px-3 py-3">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-accent-cyan/50 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
+                <AlertTriangle size={28} className="text-amber-400" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[#eef2ff]">
+                    Не удалось загрузить спутники
+                  </p>
+                  <p className="text-xs leading-relaxed text-[#94a3c0]">{error}</p>
+                </div>
+              </div>
+            ) : satellites.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-[#94a3c0]">
+                <SatelliteIcon size={32} className="mb-3 opacity-40" />
+                <p className="text-sm">{'Спутники не найдены'}</p>
+                <p className="text-xs mt-1">{'Попробуйте изменить фильтры'}</p>
+              </div>
+            ) : (
+              <div className="space-y-2 pb-2">
+                {satellites.map((sat) => (
+                  <SatelliteListItem
+                    key={sat.id}
+                    satellite={sat}
+                    isSelected={selectedSatellite?.id === sat.id}
+                    onSelect={handleSelect}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
