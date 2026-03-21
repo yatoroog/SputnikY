@@ -22,7 +22,7 @@ type Satellite struct {
 	Period      float64 `json:"period"`
 	Inclination float64 `json:"inclination"`
 	Epoch       string  `json:"epoch"`
-	TLE         TLEData `json:"-"`
+	TLE         TLEData `json:"tle,omitempty"`
 }
 
 // SatellitePosition is a lightweight position snapshot for WebSocket broadcasts.
