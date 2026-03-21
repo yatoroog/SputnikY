@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { Satellite } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
+import { useTimeStore } from '@/store/timeStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
 
@@ -137,6 +138,12 @@ export default function CesiumGlobe({
   const renderIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSnapshotAtRef = useRef<number | null>(null);
 
+  /* rotation state */
+  const isUserInteractingRef = useRef(false);
+  const lastFrameMsRef = useRef(performance.now());
+  const lastStoreTimeMsRef = useRef(0);
+  const lastStoreWallMsRef = useRef(performance.now());
+
   const [viewerState, setViewerState] = useState<'initializing' | 'ready' | 'error'>(
     'initializing'
   );
@@ -211,15 +218,23 @@ export default function CesiumGlobe({
       }
 
       viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(GLOBE_BACKGROUND);
-      viewer.scene.fog.enabled = false;
+
+      /* ── depth: atmosphere + lighting ── */
+      viewer.scene.fog.enabled = true;
+      viewer.scene.fog.density = 2.0e-4;
+      viewer.scene.fog.minimumBrightness = 0.03;
       if (viewer.scene.moon) viewer.scene.moon.show = false;
-      if (viewer.scene.sun) viewer.scene.sun.show = false;
-      if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
+      if (viewer.scene.sun) viewer.scene.sun.show = true;
+      if (viewer.scene.skyAtmosphere) {
+        viewer.scene.skyAtmosphere.show = true;
+        viewer.scene.skyAtmosphere.brightnessShift = -0.15;
+        viewer.scene.skyAtmosphere.saturationShift = 0.15;
+      }
 
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(GLOBE_BASE);
       viewer.scene.globe.depthTestAgainstTerrain = true;
-      viewer.scene.globe.enableLighting = false;
-      viewer.scene.globe.showGroundAtmosphere = false;
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.showGroundAtmosphere = true;
       viewer.scene.globe.showWaterEffect = false;
       viewer.scene.postProcessStages.fxaa.enabled = true;
 
@@ -244,6 +259,17 @@ export default function CesiumGlobe({
         )
       );
       viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
+      /* stop Cesium's own clock — time is managed by timeStore */
+      viewer.clock.shouldAnimate = false;
+
+      /* pause rotation while the user drags / zooms */
+      viewer.camera.moveStart.addEventListener(() => {
+        isUserInteractingRef.current = true;
+      });
+      viewer.camera.moveEnd.addEventListener(() => {
+        isUserInteractingRef.current = false;
+      });
 
       /* click handler */
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -460,6 +486,38 @@ export default function CesiumGlobe({
         }
       }
 
+      /* ── Clock sync + smooth camera rotation ── */
+      const timeState = useTimeStore.getState();
+      const storeTimeMs = timeState.currentTime.getTime();
+
+      // Interpolate clock between store ticks so lighting doesn't jump
+      if (storeTimeMs !== lastStoreTimeMsRef.current) {
+        lastStoreTimeMsRef.current = storeTimeMs;
+        lastStoreWallMsRef.current = nowMs;
+      }
+      const wallSinceUpdate = nowMs - lastStoreWallMsRef.current;
+      const interpolatedMs = timeState.isPlaying
+        ? storeTimeMs + timeState.speed * wallSinceUpdate
+        : storeTimeMs;
+      activeViewer.clock.currentTime = activeCesium.JulianDate.fromDate(
+        new Date(interpolatedMs)
+      );
+
+      // Camera rotation around Earth's Z axis (spins globe + skybox together)
+      const dtSec = Math.min((nowMs - lastFrameMsRef.current) / 1000, 0.05);
+      lastFrameMsRef.current = nowMs;
+
+      if (timeState.isPlaying && !isUserInteractingRef.current && dtSec > 0) {
+        const EARTH_DEG_PER_SEC = 360 / 86400;
+        const MAX_DEG_PER_SEC = 2;
+        const deg = Math.min(EARTH_DEG_PER_SEC * timeState.speed, MAX_DEG_PER_SEC);
+        activeViewer.camera.rotate(
+          activeCesium.Cartesian3.UNIT_Z,
+          -activeCesium.Math.toRadians(deg * dtSec)
+        );
+      }
+
+      activeViewer.scene.requestRender();
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
