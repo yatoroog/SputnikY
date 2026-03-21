@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { load } from '@2gis/mapgl';
 import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
+import { useThemeStore } from '@/store/themeStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
 
@@ -12,43 +14,35 @@ const SatelliteModel3D = dynamic(() => import('./SatelliteModel3D'), {
 });
 
 const EARTH_RADIUS_KM = 6_371;
+const API_KEY = 'ee37b3dd-50f6-4958-8612-7ec94396b79b';
+const STYLE_DARK = 'e05ac437-fcc2-4845-ad74-b1de9ce07555';
+const STYLE_LIGHT = 'c080bb6a-8134-4993-93a1-5b4d8c36a59b';
 
-/* ── orbit-type palette (matches CesiumGlobe) ───────────── */
+type MapGLModule = Awaited<ReturnType<typeof load>>;
+type MapInstance = InstanceType<MapGLModule['Map']>;
+type MarkerInstance = InstanceType<MapGLModule['Marker']>;
+type CircleInstance = InstanceType<MapGLModule['Circle']>;
+type PolylineInstance = InstanceType<MapGLModule['Polyline']>;
 
 function getOrbitColor(orbitType: string) {
   switch (orbitType?.toUpperCase()) {
-    case 'LEO':
-      return '#22d3ee';
-    case 'MEO':
-      return '#60a5fa';
-    case 'GEO':
-      return '#fbbf24';
-    case 'HEO':
-      return '#f87171';
-    default:
-      return '#94a3b8';
+    case 'LEO': return '#22d3ee';
+    case 'MEO': return '#60a5fa';
+    case 'GEO': return '#fbbf24';
+    case 'HEO': return '#f87171';
+    default: return '#94a3b8';
   }
 }
 
-/* ── 2GIS type stubs ─────────────────────────────────────── */
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DGMap = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DGMarker = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DGPolyline = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DGCircle = any;
-
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    DG?: any;
-  }
+function makeDotSvg(color: string, isSelected: boolean): string {
+  const size = isSelected ? 16 : 10;
+  const r = size / 2 - 1;
+  const borderW = isSelected ? 2 : 1;
+  const border = isSelected ? '#ffffff' : color;
+  const glow = isSelected ? `<circle cx="${size / 2}" cy="${size / 2}" r="${r + 2}" fill="none" stroke="${color}" stroke-width="1" opacity="0.4"/>` : '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size + 4}" height="${size + 4}">${glow}<circle cx="${(size + 4) / 2}" cy="${(size + 4) / 2}" r="${r}" fill="${color}" stroke="${border}" stroke-width="${borderW}"/></svg>`;
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
-
-/* ── helpers ─────────────────────────────────────────────── */
 
 interface Map2DProps {
   satellites: Satellite[];
@@ -67,53 +61,18 @@ function hasRenderableCoords(lat: number, lng: number, altKm: number) {
   );
 }
 
-function makeDotIcon(
-  DG: NonNullable<typeof window.DG>,
-  color: string,
-  isSelected: boolean
-) {
-  const size = isSelected ? 14 : 8;
-  const borderW = isSelected ? 2 : 1;
-  const border = isSelected ? '#fff' : color;
-  const shadow = isSelected ? `0 0 14px ${color}` : `0 0 4px ${color}80`;
-  return DG.divIcon({
-    html: `<div style="
-      width:${size}px;height:${size}px;
-      background:${color};
-      border-radius:50%;
-      border:${borderW}px solid ${border};
-      box-shadow:${shadow};
-      pointer-events:auto;cursor:pointer;
-    "></div>`,
-    className: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
-function applyMarkerTransition(marker: DGMarker) {
-  const markerElement = (marker as { _icon?: HTMLElement; getElement?: () => HTMLElement | null })
-    .getElement?.() ?? (marker as { _icon?: HTMLElement })._icon;
-
-  if (markerElement) {
-    markerElement.style.transition = 'transform 220ms linear';
-    markerElement.style.willChange = 'transform';
-  }
-}
-
-/* ── component ───────────────────────────────────────────── */
-
 export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
-  const mapRef = useRef<DGMap | null>(null);
+  const mapRef = useRef<MapInstance | null>(null);
+  const mapglRef = useRef<MapGLModule | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<Map<string, DGMarker>>(new Map());
-  const orbitLinesRef = useRef<DGPolyline[]>([]);
-  const coverageCircleRef = useRef<DGCircle | null>(null);
-  const clickedMarkerRef = useRef<DGMarker | null>(null);
+  const markersRef = useRef<Map<string, MarkerInstance>>(new Map());
+  const orbitLinesRef = useRef<PolylineInstance[]>([]);
+  const coverageCircleRef = useRef<CircleInstance | null>(null);
+  const clickedMarkerRef = useRef<MarkerInstance | null>(null);
   const satellitesRef = useRef<Satellite[]>(satellites);
   const prevSelectedIdRef = useRef<string | null>(null);
-
-  const prevMapStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const prevMapStateRef = useRef<{ center: number[]; zoom: number } | null>(null);
+  const markerClickedRef = useRef(false);
 
   const [mapReady, setMapReady] = useState(false);
 
@@ -123,83 +82,65 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   const isCloseUp = useSatelliteStore((state) => state.isCloseUp);
+  const isDark = useThemeStore((state) => state.isDark);
   satellitesRef.current = satellites;
   selectedSatRef.current = selectedSatellite;
   isCloseUpRef.current = isCloseUp;
 
-  /* ── load 2GIS script ──────────────────────────────────── */
-
-  const loadDGScript = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      if (window.DG) {
-        resolve();
-        return;
-      }
-      const existing = document.querySelector('script[src*="maps.api.2gis.ru"]');
-      if (existing) {
-        const check = setInterval(() => {
-          if (window.DG) { clearInterval(check); resolve(); }
-        }, 100);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://maps.api.2gis.ru/2.0/loader.js?pkg=full';
-      script.async = true;
-      script.onload = () => {
-        const check = setInterval(() => {
-          if (window.DG) { clearInterval(check); resolve(); }
-        }, 100);
-      };
-      document.head.appendChild(script);
-    });
-  }, []);
-
-  /* ── init map ──────────────────────────────────────────── */
-
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
-      await loadDGScript();
-      if (cancelled || !containerRef.current || !window.DG) return;
+    (async () => {
+      const mapgl = await load();
+      if (cancelled || !containerRef.current) return;
 
-      window.DG.then(() => {
-        if (cancelled || !containerRef.current || !window.DG) return;
+      mapglRef.current = mapgl;
 
-        const map = window.DG.map(containerRef.current, {
-          center: [30, 60],
-          zoom: 3,
-          scrollWheelZoom: true,
-          zoomControl: true,
-        });
-
-        // Click on empty area
-        map.on('click', (e: { latlng: { lat: number; lng: number } }) => {
-          setClickedLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
-        });
-
-        mapRef.current = map;
-        setMapReady(true);
+      const currentTheme = useThemeStore.getState().isDark;
+      const map = new mapgl.Map(containerRef.current, {
+        key: API_KEY,
+        center: [60, 30],
+        zoom: 3,
+        zoomControl: true,
+        style: currentTheme ? STYLE_DARK : STYLE_LIGHT,
+        defaultBackgroundColor: currentTheme ? '#1C2429' : '#F5F2E0',
       });
+
+      map.on('click', (e) => {
+        if (markerClickedRef.current) {
+          markerClickedRef.current = false;
+          return;
+        }
+        const lngLat = e.lngLat;
+        setClickedLocation({ lat: lngLat[1], lng: lngLat[0] });
+      });
+
+      mapRef.current = map;
+      setMapReady(true);
     })();
 
     return () => {
       cancelled = true;
-      orbitLinesRef.current.forEach((l) => { try { l.remove(); } catch {} });
+      orbitLinesRef.current.forEach((l) => { try { l.destroy(); } catch {} });
       orbitLinesRef.current = [];
-      markersRef.current.forEach((m) => { try { m.remove(); } catch {} });
+      markersRef.current.forEach((m) => { try { m.destroy(); } catch {} });
       markersRef.current.clear();
-      if (coverageCircleRef.current) { try { coverageCircleRef.current.remove(); } catch {} }
-      if (clickedMarkerRef.current) { try { clickedMarkerRef.current.remove(); } catch {} }
+      if (coverageCircleRef.current) { try { coverageCircleRef.current.destroy(); } catch {} }
+      if (clickedMarkerRef.current) { try { clickedMarkerRef.current.destroy(); } catch {} }
       if (mapRef.current) {
-        try { mapRef.current.remove(); } catch {}
+        try { mapRef.current.destroy(); } catch {}
         mapRef.current = null;
       }
+      mapglRef.current = null;
       setMapReady(false);
     };
-  }, [loadDGScript, setClickedLocation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  /* ── subscribe to positions without re-renders ────────── */
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return;
+    mapRef.current.setStyleById(isDark ? STYLE_DARK : STYLE_LIGHT);
+  }, [isDark, mapReady]);
 
   useEffect(() => {
     positionsRef.current = useSatelliteStore.getState().positions;
@@ -208,8 +149,6 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     });
     return unsub;
   }, []);
-
-  /* ── RAF position update loop (decoupled from React) ─── */
 
   useEffect(() => {
     const map = mapRef.current;
@@ -225,17 +164,11 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         const positions = positionsRef.current;
         markersRef.current.forEach((marker, id) => {
           const p = positions.get(id);
-          if (p) marker.setLatLng([p.lat, p.lng]);
+          if (p) marker.setCoordinates([p.lng, p.lat]);
         });
-        const sel = selectedSatRef.current;
-        if (coverageCircleRef.current && sel) {
-          const p = positions.get(sel.id);
-          if (p) coverageCircleRef.current.setLatLng([p.lat, p.lng]);
-        }
-        // Follow selected satellite in close-up mode
-        if (isCloseUpRef.current && sel && map) {
-          const p = positions.get(sel.id);
-          if (p) map.panTo([p.lat, p.lng], { animate: false });
+        if (isCloseUpRef.current && selectedSatRef.current) {
+          const p = positions.get(selectedSatRef.current.id);
+          if (p) map.setCenter([p.lng, p.lat], { duration: 0 });
         }
       }
       rafId = requestAnimationFrame(tick);
@@ -245,27 +178,23 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     return () => cancelAnimationFrame(rafId);
   }, [mapReady]);
 
-  /* ── update markers ────────────────────────────────────── */
-
   useEffect(() => {
     const map = mapRef.current;
-    const DG = window.DG;
-    if (!map || !DG || !mapReady) return;
+    const mapgl = mapglRef.current;
+    if (!map || !mapgl || !mapReady) return;
 
     const currentIds = new Set(satellites.map((s) => s.id));
     const selId = selectedSatellite?.id ?? null;
     const prevSelId = prevSelectedIdRef.current;
     prevSelectedIdRef.current = selId;
 
-    // Remove stale markers
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
-        marker.remove();
+        marker.destroy();
         markersRef.current.delete(id);
       }
     });
 
-    // IDs that need icon refresh (selection changed)
     const needsIconRefresh = new Set<string>();
     if (prevSelId && prevSelId !== selId) needsIconRefresh.add(prevSelId);
     if (selId && selId !== prevSelId) needsIconRefresh.add(selId);
@@ -284,22 +213,26 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       const existing = markersRef.current.get(sat.id);
 
       if (existing) {
-        // Only refresh icon if selection state changed for this marker
         if (needsIconRefresh.has(sat.id)) {
-          existing.setIcon(makeDotIcon(DG, color, isSelected));
-          applyMarkerTransition(existing);
+          const size = isSelected ? 20 : 14;
+          existing.setIcon({
+            icon: makeDotSvg(color, isSelected),
+            size: [size, size],
+            anchor: [size / 2, size / 2],
+          });
         }
       } else {
-        const icon = makeDotIcon(DG, color, isSelected);
-        const marker = DG.marker([lat, lng], { icon }).addTo(map);
-        applyMarkerTransition(marker);
-        marker.bindPopup(
-          `<b>${sat.name}</b><br>` +
-            `<small>${sat.orbitType} | ${altKm.toFixed(1)} km | NORAD ${sat.noradId}</small>`
-        );
+        const size = isSelected ? 20 : 14;
+        const marker = new mapgl.Marker(map, {
+          coordinates: [lng, lat],
+          icon: makeDotSvg(color, isSelected),
+          size: [size, size],
+          anchor: [size / 2, size / 2],
+          userData: { satId: sat.id },
+        });
         const satId = sat.id;
-        marker.on('click', (e: { originalEvent?: { stopPropagation?: () => void } }) => {
-          if (e.originalEvent?.stopPropagation) e.originalEvent.stopPropagation();
+        marker.on('click', () => {
+          markerClickedRef.current = true;
           const s = satellitesRef.current.find((item: Satellite) => item.id === satId);
           if (s) selectSatellite(s);
         });
@@ -308,65 +241,43 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     }
   }, [satellites, selectedSatellite, selectSatellite, mapReady]);
 
-  /* ── close-up mode: zoom, hide markers, save/restore state ── */
-
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
     if (isCloseUp && selectedSatellite) {
-      // Save current map state (only on first entry)
       if (!prevMapStateRef.current) {
-        const c = map.getCenter();
         prevMapStateRef.current = {
-          center: [c.lat, c.lng],
+          center: map.getCenter(),
           zoom: map.getZoom(),
         };
       }
 
-      // Hide all markers
-      markersRef.current.forEach((marker: DGMarker) => {
-        const el =
-          (marker as { _icon?: HTMLElement })._icon ??
-          (marker as { getElement?: () => HTMLElement | null }).getElement?.();
-        if (el) el.style.display = 'none';
-      });
+      markersRef.current.forEach((marker) => marker.hide());
 
-      // Zoom close to satellite
       const pos = positionsRef.current.get(selectedSatellite.id);
       if (pos) {
-        map.setView([pos.lat, pos.lng], 5, { animate: true, duration: 1.5 });
+        map.setCenter([pos.lng, pos.lat], { duration: 1500 });
+        map.setZoom(5, { duration: 1500 });
       }
     } else {
-      // Show all markers
-      markersRef.current.forEach((marker: DGMarker) => {
-        const el =
-          (marker as { _icon?: HTMLElement })._icon ??
-          (marker as { getElement?: () => HTMLElement | null }).getElement?.();
-        if (el) el.style.display = '';
-      });
+      markersRef.current.forEach((marker) => marker.show());
 
-      // Restore previous map state
       if (prevMapStateRef.current) {
-        map.setView(
-          prevMapStateRef.current.center,
-          prevMapStateRef.current.zoom,
-          { animate: true, duration: 1.5 }
-        );
+        map.setCenter(prevMapStateRef.current.center, { duration: 1500 });
+        map.setZoom(prevMapStateRef.current.zoom, { duration: 1500 });
         prevMapStateRef.current = null;
       }
     }
   }, [isCloseUp, selectedSatellite, mapReady]);
 
-  /* ── coverage zone ───────────────────────────────────────── */
-
   useEffect(() => {
     const map = mapRef.current;
-    const DG = window.DG;
-    if (!map || !DG || !mapReady) return;
+    const mapgl = mapglRef.current;
+    if (!map || !mapgl || !mapReady) return;
 
     if (coverageCircleRef.current) {
-      try { coverageCircleRef.current.remove(); } catch {}
+      try { coverageCircleRef.current.destroy(); } catch {}
       coverageCircleRef.current = null;
     }
 
@@ -383,61 +294,48 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
     const color = getOrbitColor(selectedSatellite.orbitType);
 
-    coverageCircleRef.current = DG.circle([lat, lng], {
+    coverageCircleRef.current = new mapgl.Circle(map, {
+      coordinates: [lng, lat],
       radius: groundRadiusMeters,
-      color: color,
-      weight: 1.5,
-      opacity: 0.4,
-      fillColor: color,
-      fillOpacity: 0.08,
-    }).addTo(map);
+      color: color + '14',
+      strokeColor: color + '66',
+      strokeWidth: 1.5,
+    });
   }, [selectedSatellite, mapReady]);
-
-  /* ── clicked location marker ──────────────────────────── */
 
   useEffect(() => {
     const unsub = useSatelliteStore.subscribe((state, prev) => {
       if (state.clickedLocation !== prev.clickedLocation) {
         const map = mapRef.current;
-        const DG = window.DG;
-        if (!map || !DG) return;
+        const mapgl = mapglRef.current;
+        if (!map || !mapgl) return;
 
         if (clickedMarkerRef.current) {
-          try { clickedMarkerRef.current.remove(); } catch {}
+          try { clickedMarkerRef.current.destroy(); } catch {}
           clickedMarkerRef.current = null;
         }
 
         const loc = state.clickedLocation;
         if (!loc) return;
 
-        const icon = DG.divIcon({
-          html: `<div style="
-            width:12px;height:12px;
-            background:#f59e0b;
-            border-radius:50%;
-            border:2px solid #fff;
-            box-shadow:0 0 10px #f59e0b80;
-          "></div>`,
-          className: '',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="4" fill="#f59e0b" stroke="#ffffff" stroke-width="2"/></svg>`;
+        clickedMarkerRef.current = new mapgl.Marker(map, {
+          coordinates: [loc.lng, loc.lat],
+          icon: `data:image/svg+xml;base64,${btoa(svg)}`,
+          size: [12, 12],
+          anchor: [6, 6],
         });
-
-        clickedMarkerRef.current = DG.marker([loc.lat, loc.lng], { icon }).addTo(map);
       }
     });
     return unsub;
   }, []);
 
-  /* ── orbit path ────────────────────────────────────────── */
-
   useEffect(() => {
     const map = mapRef.current;
-    const DG = window.DG;
-    if (!map || !DG || !mapReady) return;
+    const mapgl = mapglRef.current;
+    if (!map || !mapgl || !mapReady) return;
 
-    // Remove old orbit lines
-    orbitLinesRef.current.forEach((l) => { try { l.remove(); } catch {} });
+    orbitLinesRef.current.forEach((l) => { try { l.destroy(); } catch {} });
     orbitLinesRef.current = [];
 
     if (!selectedSatellite) return;
@@ -452,17 +350,16 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         if (cancelled || !mapRef.current) return;
         if (!orbitData || orbitData.length < 2) return;
 
-        const orbitPoints: [number, number][] = orbitData.map((pt) => [pt.lat, pt.lng]);
+        const orbitPoints: number[][] = orbitData.map((pt) => [pt.lng, pt.lat]);
 
-        // Split at antimeridian crossings
-        const segments: [number, number][][] = [];
-        let current: [number, number][] = [];
+        const segments: number[][][] = [];
+        let current: number[][] = [];
 
         for (let i = 0; i < orbitPoints.length; i++) {
           const pt = orbitPoints[i];
           if (current.length > 0) {
             const prev = current[current.length - 1];
-            if (Math.abs(pt[1] - prev[1]) > 180) {
+            if (Math.abs(pt[0] - prev[0]) > 180) {
               segments.push(current);
               current = [];
             }
@@ -472,12 +369,14 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         if (current.length > 0) segments.push(current);
 
         for (const seg of segments) {
-          const line = DG.polyline(seg, {
-            color,
-            weight: 1.5,
-            opacity: 0.5,
-            dashArray: '6,4',
-          }).addTo(map);
+          const line = new mapgl.Polyline(map, {
+            coordinates: seg,
+            width: 2,
+            color: color + '80',
+            dashLength: 6,
+            gapLength: 4,
+            gapColor: '#00000000',
+          });
           orbitLinesRef.current.push(line);
         }
       } catch (err) {
@@ -487,8 +386,6 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
     return () => { cancelled = true; };
   }, [selectedSatellite, mapReady]);
-
-  /* ── render ─────────────────────────────────────────────── */
 
   return (
     <div className="relative w-full h-full" style={{ background: '#0a1628' }}>

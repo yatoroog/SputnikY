@@ -20,24 +20,15 @@ const GLOBE_BASE = '#0a1628';
 const GLOBE_COUNTRY_STROKE = '#c4cedd';
 const LABEL_COLOR = '#f8fafc';
 
-/* ── orbit-type palette ─────────────────────────────────── */
-
 function getOrbitPointColor(orbitType: string) {
   switch (orbitType?.toUpperCase()) {
-    case 'LEO':
-      return '#22d3ee'; // cyan
-    case 'MEO':
-      return '#60a5fa'; // blue
-    case 'GEO':
-      return '#fbbf24'; // amber
-    case 'HEO':
-      return '#f87171'; // red
-    default:
-      return '#94a3b8'; // slate
+    case 'LEO': return '#22d3ee';
+    case 'MEO': return '#60a5fa';
+    case 'GEO': return '#fbbf24';
+    case 'HEO': return '#f87171';
+    default: return '#94a3b8';
   }
 }
-
-/* ── helpers ─────────────────────────────────────────────── */
 
 interface CesiumGlobeProps {
   satellites: Satellite[];
@@ -92,10 +83,7 @@ function interpolateLongitude(from: number, to: number, progress: number) {
 }
 
 function getMotionPosition(motion: MotionState, nowMs: number): RenderPosition {
-  if (motion.durationMs <= 0) {
-    return motion.to;
-  }
-
+  if (motion.durationMs <= 0) return motion.to;
   const progress = Math.min(1, Math.max(0, (nowMs - motion.startedAtMs) / motion.durationMs));
   return {
     lat: motion.from.lat + (motion.to.lat - motion.from.lat) * progress,
@@ -103,8 +91,6 @@ function getMotionPosition(motion: MotionState, nowMs: number): RenderPosition {
     altKm: motion.from.altKm + (motion.to.altKm - motion.from.altKm) * progress,
   };
 }
-
-/* ── component ───────────────────────────────────────────── */
 
 export default function CesiumGlobe({
   satellites,
@@ -120,9 +106,7 @@ export default function CesiumGlobe({
   const orbitEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const coverageEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const clickedLocationEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const selectedLabelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(
-    null
-  );
+  const selectedLabelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const clickHandlerRef = useRef<InstanceType<
     typeof import('cesium').ScreenSpaceEventHandler
   > | null>(null);
@@ -144,15 +128,15 @@ export default function CesiumGlobe({
     up: InstanceType<typeof import('cesium').Cartesian3>;
   } | null>(null);
 
-  /* rotation state */
   const isUserInteractingRef = useRef(false);
   const lastFrameMsRef = useRef(performance.now());
   const lastStoreTimeMsRef = useRef(0);
   const lastStoreWallMsRef = useRef(performance.now());
+  const isCloseUpRef = useRef(false);
+  const closeUpRangeRef = useRef(4_000_000);
+  const closeUpTrackingRef = useRef(false);
 
-  const [viewerState, setViewerState] = useState<'initializing' | 'ready' | 'error'>(
-    'initializing'
-  );
+  const [viewerState, setViewerState] = useState<'initializing' | 'ready' | 'error'>('initializing');
   const [viewerError, setViewerError] = useState<string | null>(null);
 
   const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
@@ -160,8 +144,6 @@ export default function CesiumGlobe({
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   satellitesRef.current = satellites;
   selectedSatelliteRef.current = selectedSatellite;
-
-  /* ── init ───────────────────────────────────────────────── */
 
   const initViewer = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
@@ -173,7 +155,6 @@ export default function CesiumGlobe({
       const Cesium = await import('cesium');
       await import('cesium/Build/Cesium/Widgets/widgets.css').catch(() => {});
 
-      // Guard against double init (React Strict Mode)
       if (viewerRef.current) return;
       cesiumRef.current = Cesium;
 
@@ -225,7 +206,6 @@ export default function CesiumGlobe({
 
       viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(GLOBE_BACKGROUND);
 
-      /* ── depth: atmosphere + lighting ── */
       viewer.scene.fog.enabled = true;
       viewer.scene.fog.density = 2.0e-4;
       viewer.scene.fog.minimumBrightness = 0.03;
@@ -250,12 +230,10 @@ export default function CesiumGlobe({
       viewer.scene.screenSpaceCameraController.minimumZoomDistance = 7_500_000;
       viewer.scene.screenSpaceCameraController.maximumZoomDistance = 60_000_000;
 
-      /* point collection for satellites */
       pointCollectionRef.current = viewer.scene.primitives.add(
         new Cesium.PointPrimitiveCollection()
       );
 
-      /* camera */
       viewer.camera.viewBoundingSphere(
         new Cesium.BoundingSphere(Cesium.Cartesian3.ZERO, EARTH_RADIUS_METERS),
         new Cesium.HeadingPitchRange(
@@ -266,10 +244,8 @@ export default function CesiumGlobe({
       );
       viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
 
-      /* stop Cesium's own clock — time is managed by timeStore */
       viewer.clock.shouldAnimate = false;
 
-      /* pause rotation while the user drags / zooms */
       viewer.camera.moveStart.addEventListener(() => {
         isUserInteractingRef.current = true;
       });
@@ -277,7 +253,6 @@ export default function CesiumGlobe({
         isUserInteractingRef.current = false;
       });
 
-      /* click handler */
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       clickHandlerRef.current = handler;
       handler.setInputAction(
@@ -309,7 +284,6 @@ export default function CesiumGlobe({
             const sat = satellitesRef.current.find((item) => item.id === satId);
             if (sat) selectSatellite(sat);
           } else {
-            // Click on empty area — get geographic coordinates
             const ray = viewer.camera.getPickRay(movement.position);
             if (ray) {
               const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
@@ -333,12 +307,10 @@ export default function CesiumGlobe({
       setViewerState('ready');
       viewer.scene.requestRender();
 
-      // Periodic render for live position updates
       renderIntervalRef.current = setInterval(() => {
         if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
       }, 2000);
 
-      /* async imagery & borders */
       void (async () => {
         try {
           const tmsUrl = Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII');
@@ -353,9 +325,7 @@ export default function CesiumGlobe({
             earthLayer.hue = -0.02;
             viewer.scene.requestRender();
           }
-        } catch {
-          /* fallback to globe base color */
-        }
+        } catch {}
 
         try {
           const countryBorders = await Cesium.GeoJsonDataSource.load(
@@ -389,9 +359,7 @@ export default function CesiumGlobe({
             countryBordersRef.current = countryBorders;
             viewer.scene.requestRender();
           }
-        } catch {
-          /* borders are decorative */
-        }
+        } catch {}
       })();
     } catch (error) {
       if (containerRef.current) containerRef.current.innerHTML = '';
@@ -434,8 +402,6 @@ export default function CesiumGlobe({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── subscribe to positions without re-renders ────────── */
-
   useEffect(() => {
     positionsRef.current = useSatelliteStore.getState().positions;
     const unsub = useSatelliteStore.subscribe((state, prev) => {
@@ -468,8 +434,6 @@ export default function CesiumGlobe({
     return unsub;
   }, []);
 
-  /* ── smooth point animation ───────────────────────────── */
-
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -499,7 +463,6 @@ export default function CesiumGlobe({
       pointMapRef.current.forEach((point, id) => {
         const motion = pointMotionRef.current.get(id);
         if (!motion) return;
-
         const position = getMotionPosition(motion, nowMs);
         point.position = activeCesium.Cartesian3.fromDegrees(
           position.lng,
@@ -526,14 +489,30 @@ export default function CesiumGlobe({
               activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
             );
         }
-
       }
 
-      /* ── Clock sync + smooth camera rotation ── */
+      if (closeUpTrackingRef.current && selectedId) {
+        const motion = pointMotionRef.current.get(selectedId);
+        if (motion) {
+          const p = getMotionPosition(motion, nowMs);
+          const satPosition = activeCesium.Cartesian3.fromDegrees(
+            p.lng, p.lat, p.altKm * 1000
+          );
+          const transform = activeCesium.Transforms.eastNorthUpToFixedFrame(satPosition);
+          activeViewer.camera.lookAtTransform(
+            transform,
+            new activeCesium.HeadingPitchRange(
+              0,
+              activeCesium.Math.toRadians(-80),
+              closeUpRangeRef.current
+            )
+          );
+        }
+      }
+
       const timeState = useTimeStore.getState();
       const storeTimeMs = timeState.currentTime.getTime();
 
-      // Interpolate clock between store ticks so lighting doesn't jump
       if (storeTimeMs !== lastStoreTimeMsRef.current) {
         lastStoreTimeMsRef.current = storeTimeMs;
         lastStoreWallMsRef.current = nowMs;
@@ -546,7 +525,6 @@ export default function CesiumGlobe({
         new Date(interpolatedMs)
       );
 
-      // Camera rotation around Earth's Z axis (spins globe + skybox together)
       const dtSec = Math.min((nowMs - lastFrameMsRef.current) / 1000, 0.05);
       lastFrameMsRef.current = nowMs;
 
@@ -574,8 +552,6 @@ export default function CesiumGlobe({
     };
   }, [viewerState]);
 
-  /* ── update satellite points ───────────────────────────── */
-
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -592,7 +568,6 @@ export default function CesiumGlobe({
     const currentIds = new Set(satellites.map((s) => s.id));
     const existingIdsList = Array.from(pointMapRef.current.keys());
 
-    // Remove stale points
     existingIdsList.forEach((id) => {
       if (!currentIds.has(id)) {
         const point = pointMapRef.current.get(id);
@@ -607,11 +582,9 @@ export default function CesiumGlobe({
     const nowMs = performance.now();
     const positions = positionsRef.current;
 
-    // Shared NearFarScalar instances (avoid allocating per satellite)
     const sharedScale = new Cesium.NearFarScalar(2.0e6, 1.4, 4.2e7, 0.6);
     const sharedTranslucency = new Cesium.NearFarScalar(2.0e6, 1.0, 4.2e7, 0.8);
 
-    // Pre-parse orbit colors once
     const colorCache = new Map<string, InstanceType<typeof Cesium.Color>>();
     const getColor = (orbitType: string) => {
       let c = colorCache.get(orbitType);
@@ -622,7 +595,6 @@ export default function CesiumGlobe({
       return c;
     };
 
-    // Add / update
     for (const sat of satellites) {
       const pos = positions.get(sat.id);
       const lat = pos?.lat ?? sat.latitude;
@@ -671,7 +643,6 @@ export default function CesiumGlobe({
         });
         pointMapRef.current.set(sat.id, point);
 
-        // Ensure initial motion state exists
         if (!pointMotionRef.current.has(sat.id)) {
           pointMotionRef.current.set(sat.id, {
             from: initPos,
@@ -683,7 +654,6 @@ export default function CesiumGlobe({
       }
     }
 
-    // Selected label
     if (selectedLabelEntityRef.current) {
       viewer.entities.remove(selectedLabelEntityRef.current);
       selectedLabelEntityRef.current = null;
@@ -717,8 +687,6 @@ export default function CesiumGlobe({
     viewer.scene.requestRender();
   }, [satellites, selectedSatellite, viewerState]);
 
-  /* ── coverage zone (footprint) ─────────────────────────── */
-
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -738,10 +706,8 @@ export default function CesiumGlobe({
 
     if (!hasRenderableCoordinates(lat, lng, altKm)) return;
 
-    // Footprint radius calculation
     const halfAngle = Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
     const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
-
     const baseColor = getOrbitPointColor(selectedSatellite.orbitType);
     const color = Cesium.Color.fromCssColorString(baseColor);
 
@@ -760,8 +726,6 @@ export default function CesiumGlobe({
 
     viewer.scene.requestRender();
   }, [selectedSatellite, viewerState]);
-
-  /* ── clicked location marker ─────────────────────────── */
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -798,7 +762,6 @@ export default function CesiumGlobe({
     viewer.scene.requestRender();
   }, [viewerState]);
 
-  // Subscribe to clickedLocation changes
   useEffect(() => {
     const unsub = useSatelliteStore.subscribe((state, prev) => {
       if (state.clickedLocation !== prev.clickedLocation) {
@@ -839,8 +802,6 @@ export default function CesiumGlobe({
     return unsub;
   }, []);
 
-  /* ── orbit path (only when satellite selected) ─────────── */
-
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -861,10 +822,8 @@ export default function CesiumGlobe({
 
     (async () => {
       try {
-        // Fetch full orbit period (~3 hours for LEO, enough for one revolution)
         const orbitData = await fetchOrbit(sat.id, 3);
         if (cancelled || !viewerRef.current || viewerRef.current.isDestroyed()) return;
-
         if (!orbitData || orbitData.length < 2) return;
 
         const orbitPositions = orbitData.map((pt) =>
@@ -893,11 +852,6 @@ export default function CesiumGlobe({
     return () => { cancelled = true; };
   }, [selectedSatellite, viewerState]);
 
-  /* ── 3D model close-up mode (controlled by isCloseUp toggle) ── */
-
-  const isCloseUpRef = useRef(false);
-  const closeUpRangeRef = useRef(40000);
-
   useEffect(() => {
     const unsub = useSatelliteStore.subscribe((state, prev) => {
       if (state.isCloseUp === prev.isCloseUp && state.selectedSatellite === prev.selectedSatellite) return;
@@ -910,19 +864,17 @@ export default function CesiumGlobe({
       const wasCloseUp = isCloseUpRef.current;
       isCloseUpRef.current = wantCloseUp;
 
-      /* ── EXIT close-up ── */
       if (wasCloseUp && !wantCloseUp) {
-        // Remove model
+        closeUpTrackingRef.current = false;
+
         if (modelEntityRef.current) {
           viewer.trackedEntity = undefined;
           viewer.entities.remove(modelEntityRef.current);
           modelEntityRef.current = null;
         }
 
-        // Show all points
         pointMapRef.current.forEach((point) => { point.show = true; });
 
-        // Restore depth test and camera
         viewer.scene.globe.depthTestAgainstTerrain = true;
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 7_500_000;
         viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
@@ -943,7 +895,6 @@ export default function CesiumGlobe({
         return;
       }
 
-      /* ── ENTER close-up ── */
       if (wantCloseUp && !wasCloseUp) {
         const sat = state.selectedSatellite!;
         const pos = positionsRef.current.get(sat.id);
@@ -953,21 +904,17 @@ export default function CesiumGlobe({
 
         if (!hasRenderableCoordinates(lat, lng, altKm)) return;
 
-        // Save camera state
         prevCameraRef.current = {
           position: viewer.camera.position.clone(),
           direction: viewer.camera.direction.clone(),
           up: viewer.camera.up.clone(),
         };
 
-        // Allow close zoom, disable terrain depth test so coverage zone is visible
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 100;
         viewer.scene.globe.depthTestAgainstTerrain = false;
 
-        // Hide all points
         pointMapRef.current.forEach((point) => { point.show = false; });
 
-        // Create model with CallbackProperty position for smooth tracking
         const satId = sat.id;
         const modelScale = altKm < 2000 ? 2500 : altKm < 20000 ? 7500 : 20000;
         const flyRange = altKm < 2000 ? 4_000_000 : altKm < 20000 ? 8_000_000 : 15_000_000;
@@ -1006,7 +953,6 @@ export default function CesiumGlobe({
           },
         });
 
-        // Fly to satellite, then start tracking
         const destination = Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
         viewer.camera.flyToBoundingSphere(
           new Cesium.BoundingSphere(destination, 1),
@@ -1018,8 +964,8 @@ export default function CesiumGlobe({
             ),
             duration: 1.5,
             complete: () => {
-              if (viewerRef.current && !viewerRef.current.isDestroyed() && modelEntityRef.current) {
-                viewerRef.current.trackedEntity = modelEntityRef.current;
+              if (viewerRef.current && !viewerRef.current.isDestroyed() && isCloseUpRef.current) {
+                closeUpTrackingRef.current = true;
               }
             },
           }
@@ -1030,8 +976,6 @@ export default function CesiumGlobe({
     });
     return unsub;
   }, []);
-
-  /* ── render ─────────────────────────────────────────────── */
 
   return (
     <div className="relative w-full h-full" style={{ background: GLOBE_BACKGROUND }}>
