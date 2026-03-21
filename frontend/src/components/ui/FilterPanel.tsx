@@ -50,22 +50,22 @@ export default function FilterPanel() {
   }, [resetFilters]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {/* Orbit type chips */}
       <div>
-        <p className="text-xs text-[#9ca3af] mb-2 uppercase tracking-wider">
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#7f8ca7]">
           {'\u0422\u0438\u043F \u043E\u0440\u0431\u0438\u0442\u044B'}
         </p>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {ORBIT_TYPES.map((type) => (
             <button
               key={type.value}
               onClick={() => setOrbitType(type.value)}
               className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 border',
+                'premium-chip rounded-full px-4 py-2 text-xs font-semibold tracking-[0.16em] transition-all duration-300',
                 orbitType === type.value
-                  ? 'bg-accent-cyan/20 border-accent-cyan/50 text-accent-cyan'
-                  : 'bg-cosmos-surface/30 border-cosmos-border text-[#9ca3af] hover:border-accent-cyan/30 hover:text-[#e5e7eb]'
+                  ? 'border-[#4fdcf6]/40 bg-[linear-gradient(180deg,rgba(10,82,112,0.95),rgba(8,48,76,0.92))] text-[#82ecff] shadow-[0_14px_30px_rgba(6,182,212,0.14)]'
+                  : 'text-[#7f8ca7] hover:border-[#4fdcf6]/25 hover:text-[#eef4ff]'
               )}
             >
               {type.label}
@@ -76,33 +76,35 @@ export default function FilterPanel() {
 
       {/* Country dropdown */}
       <div>
-        <p className="text-xs text-[#9ca3af] mb-2 uppercase tracking-wider">
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#7f8ca7]">
           {'\u0421\u0442\u0440\u0430\u043D\u0430'}
         </p>
-        <select
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-          className="w-full bg-cosmos-surface/50 border border-cosmos-border rounded-lg py-2 px-3 text-sm text-[#e5e7eb] focus:outline-none focus:border-accent-cyan/40 transition-colors duration-200 appearance-none cursor-pointer"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-            backgroundPosition: 'right 8px center',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '20px',
-          }}
-        >
-          {countryOptions.map((c) => (
-            <option key={c.value} value={c.value} className="bg-cosmos-surface">
-              {c.label}
-            </option>
-          ))}
-        </select>
+        <div className="premium-field rounded-[18px]">
+          <select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="w-full cursor-pointer appearance-none rounded-[18px] bg-transparent py-3.5 pl-4 pr-11 text-[15px] text-[#eef4ff] focus:outline-none"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%237f8ca7' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+              backgroundPosition: 'right 14px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: '18px',
+            }}
+          >
+            {countryOptions.map((c) => (
+              <option key={c.value} value={c.value} className="bg-cosmos-surface">
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Reset filters */}
       {hasActiveFilters && (
         <button
           onClick={handleResetFilters}
-          className="flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-accent-cyan transition-colors duration-200"
+          className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-[#8a98b7] transition-all duration-300 hover:border-[#4fdcf6]/25 hover:text-[#82ecff]"
         >
           <RotateCcw size={12} />
           {'\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u0444\u0438\u043B\u044C\u0442\u0440\u044B'}

@@ -31,16 +31,18 @@ function isValidPositionUpdate(value: unknown): value is SatellitePosition {
   );
 }
 
-export function useWebSocket() {
+export function useWebSocket(enabled: boolean = true) {
   const statusRef = useRef<ConnectionStatus>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subscribedIdsRef = useRef<string[]>([]);
   const shouldReconnectRef = useRef(true);
+  const enabledRef = useRef(enabled);
   const updatePositions = useSatelliteStore((state) => state.updatePositions);
 
   const connect = useCallback(() => {
+    if (!enabledRef.current) return;
     if (typeof WebSocket === 'undefined') return;
     if (
       wsRef.current?.readyState === WebSocket.OPEN ||
@@ -75,6 +77,7 @@ export function useWebSocket() {
       };
 
       ws.onmessage = (event) => {
+        if (!enabledRef.current) return;
         try {
           const message = JSON.parse(event.data as string) as WSMessage;
 
@@ -146,12 +149,19 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
+    enabledRef.current = enabled;
+
+    if (!enabled) {
+      disconnect();
+      return;
+    }
+
     connect();
 
     return () => {
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [enabled, connect, disconnect]);
 
   return { subscribe, disconnect, connect };
 }

@@ -182,6 +182,30 @@ func (s *SatelliteService) GetPositions() []models.SatellitePosition {
 	return positions
 }
 
+// GetPositionsAtTime propagates all tracked satellites to the provided moment
+// without mutating the live in-memory state used by the realtime worker.
+func (s *SatelliteService) GetPositionsAtTime(t time.Time) []models.SatellitePosition {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	positions := make([]models.SatellitePosition, 0, len(s.satellites))
+	for _, sat := range s.satellites {
+		lat, lng, alt, err := Propagate(sat.TLE, t)
+		if err != nil {
+			continue
+		}
+
+		positions = append(positions, models.SatellitePosition{
+			ID:        sat.ID,
+			Latitude:  lat,
+			Longitude: lng,
+			Altitude:  alt,
+		})
+	}
+
+	return positions
+}
+
 // matchesFilters checks if a satellite matches all non-empty filter criteria.
 func matchesFilters(sat *models.Satellite, f models.FilterParams) bool {
 	if f.Country != "" && !strings.EqualFold(sat.Country, f.Country) {

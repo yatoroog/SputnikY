@@ -8,7 +8,7 @@ import {
   Satellite as SatelliteIcon,
 } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
-import { cn, getOrbitTypeColor, formatAltitude, getOrbitTypeLabel } from '@/lib/utils';
+import { cn, getOrbitTypeColor, formatAltitude } from '@/lib/utils';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import TleUploader from './TleUploader';
@@ -43,32 +43,44 @@ export default function Sidebar() {
       <div className="h-full flex flex-col">
         <button
           onClick={toggleCollapsed}
-          className="panel-base p-3 hover:border-accent-cyan/30 transition-all duration-200"
+          className="panel-base premium-icon-button flex h-14 w-14 items-center justify-center rounded-[20px] text-[#9ca3af] transition-all duration-300 hover:-translate-y-0.5 hover:text-[#eef4ff]"
           title={'\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043F\u0430\u043D\u0435\u043B\u044C'}
         >
-          <ChevronRight size={18} className="text-[#9ca3af]" />
+          <ChevronRight size={18} />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="panel-base h-full w-[380px] flex flex-col animate-slide-in-left overflow-hidden">
+    <div className="panel-base relative h-full w-[min(392px,calc(100vw-1rem))] overflow-hidden animate-slide-in-left">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_72%)]" />
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="relative flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-cosmos-border">
-        <div className="flex items-center gap-2">
-          <SatelliteIcon size={18} className="text-accent-cyan" />
-          <h2 className="text-base font-semibold text-[#e5e7eb]">
-            {'\u0421\u043F\u0443\u0442\u043D\u0438\u043A\u0438'}
-          </h2>
-          <span className="bg-accent-blue/20 text-accent-blue text-xs font-medium px-2 py-0.5 rounded-full">
-            {satellites.length}
-          </span>
+      <div className="flex items-start justify-between border-b border-white/8 px-5 pb-5 pt-6">
+        <div className="flex items-center gap-3">
+          <div className="premium-icon-button flex h-11 w-11 items-center justify-center rounded-2xl text-accent-cyan">
+            <SatelliteIcon size={18} />
+          </div>
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-[17px] font-semibold tracking-[0.02em] text-[#f2f6ff]">
+                {'\u0421\u043F\u0443\u0442\u043D\u0438\u043A\u0438'}
+              </h2>
+              <span className="rounded-full border border-[#4d73c7]/30 bg-[linear-gradient(180deg,rgba(28,53,109,0.86),rgba(15,29,63,0.86))] px-2.5 py-1 text-[11px] font-semibold tracking-[0.18em] text-[#a9c5ff]">
+                {satellites.length}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-[#71809f]">
+              Орбитальный каталог
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button
             onClick={toggleUploader}
-            className="p-1.5 text-[#9ca3af] hover:text-accent-cyan transition-colors duration-200"
+            className="premium-icon-button flex h-10 w-10 items-center justify-center rounded-2xl text-[#7f8ca7] transition-all duration-300 hover:-translate-y-0.5 hover:text-[#82ecff]"
             title="TLE"
           >
             <svg
@@ -88,7 +100,7 @@ export default function Sidebar() {
           </button>
           <button
             onClick={toggleCollapsed}
-            className="p-1.5 text-[#9ca3af] hover:text-[#e5e7eb] transition-colors duration-200"
+            className="premium-icon-button flex h-10 w-10 items-center justify-center rounded-2xl text-[#7f8ca7] transition-all duration-300 hover:-translate-y-0.5 hover:text-[#eef4ff]"
           >
             <ChevronLeft size={16} />
           </button>
@@ -96,24 +108,24 @@ export default function Sidebar() {
       </div>
 
       {/* Search */}
-      <div className="p-3 border-b border-cosmos-border">
+      <div className="border-b border-white/8 px-4 py-4">
         <SearchBar />
       </div>
 
       {/* Filters */}
-      <div className="p-3 border-b border-cosmos-border">
+      <div className="border-b border-white/8 px-4 py-4">
         <FilterPanel />
       </div>
 
       {/* TLE Uploader */}
       {showUploader && (
-        <div className="p-3 border-b border-cosmos-border">
+        <div className="border-b border-white/8 px-4 py-4">
           <TleUploader />
         </div>
       )}
 
       {/* Satellite list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-3 py-3">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
@@ -135,7 +147,7 @@ export default function Sidebar() {
             <p className="text-xs mt-1">{'\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0438\u0437\u043C\u0435\u043D\u0438\u0442\u044C \u0444\u0438\u043B\u044C\u0442\u0440\u044B'}</p>
           </div>
         ) : (
-          <div className="py-1">
+          <div className="space-y-2 pb-2">
             {satellites.map((sat) => (
               <SatelliteListItem
                 key={sat.id}
@@ -146,6 +158,7 @@ export default function Sidebar() {
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
@@ -168,29 +181,35 @@ const SatelliteListItem = memo(function SatelliteListItem({
     <button
       onClick={() => onSelect(satellite)}
       className={cn(
-        'w-full text-left px-4 py-3 border-b border-cosmos-border/50 transition-all duration-200 hover:bg-accent-cyan/5',
-        isSelected && 'bg-accent-cyan/10 border-l-2 border-l-accent-cyan'
+        'group relative w-full overflow-hidden rounded-[22px] border px-4 py-4 text-left transition-all duration-300',
+        isSelected
+          ? 'border-[#47dff8]/32 bg-[linear-gradient(180deg,rgba(12,41,64,0.96),rgba(8,23,39,0.94))] shadow-[0_18px_45px_rgba(6,182,212,0.12)]'
+          : 'border-white/6 bg-[linear-gradient(180deg,rgba(14,21,40,0.92),rgba(8,13,25,0.9))] hover:-translate-y-0.5 hover:border-[#4fdcf6]/20 hover:bg-[linear-gradient(180deg,rgba(16,25,47,0.96),rgba(9,15,28,0.94))]'
       )}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-70" />
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="h-2.5 w-2.5 flex-shrink-0 rounded-full shadow-[0_0_14px_currentColor]"
               style={{ backgroundColor: orbitColor }}
             />
             <p
               className={cn(
-                'text-sm font-medium truncate',
-                isSelected ? 'text-accent-cyan' : 'text-[#e5e7eb]'
+                'truncate text-[15px] font-medium tracking-[0.01em] transition-colors duration-300',
+                isSelected ? 'text-[#87efff]' : 'text-[#ecf2ff] group-hover:text-white'
               )}
             >
               {satellite.name}
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-1 ml-4">
-            <span className="text-xs text-[#9ca3af]">
+          <div className="ml-[18px] mt-2 flex items-center gap-2">
+            <span className="text-xs uppercase tracking-[0.16em] text-[#8190af]">
               NORAD {satellite.noradId}
+            </span>
+            <span className="text-xs text-[#9ca3af]">
+              •
             </span>
             <span className="text-xs text-[#9ca3af]">
               {formatAltitude(satellite.altitude)}
@@ -198,11 +217,12 @@ const SatelliteListItem = memo(function SatelliteListItem({
           </div>
         </div>
         <span
-          className="badge flex-shrink-0 mt-0.5"
+          className="badge mt-0.5 flex-shrink-0 px-3 py-1 text-[10px] tracking-[0.22em]"
           style={{
-            backgroundColor: `${orbitColor}20`,
+            background: `linear-gradient(180deg, ${orbitColor}22, ${orbitColor}12)`,
             color: orbitColor,
-            border: `1px solid ${orbitColor}40`,
+            border: `1px solid ${orbitColor}4d`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 18px ${orbitColor}18`,
           }}
         >
           {satellite.orbitType}

@@ -11,6 +11,29 @@ import (
 	"github.com/satellite-tracker/backend/internal/tle"
 )
 
+func parseOptionalTimeParam(raw string) (time.Time, error) {
+	if raw == "" {
+		return time.Time{}, nil
+	}
+
+	if unixMillis, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		switch {
+		case unixMillis > 1_000_000_000_000:
+			return time.UnixMilli(unixMillis).UTC(), nil
+		case unixMillis > 1_000_000_000:
+			return time.Unix(unixMillis, 0).UTC(), nil
+		}
+	}
+
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+
+	return time.Time{}, fiber.ErrBadRequest
+}
+
 // Handlers holds the dependencies for all HTTP handlers.
 type Handlers struct {
 	service *satellite.SatelliteService
@@ -35,6 +58,33 @@ func (h *Handlers) GetSatellites(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"count":      len(satellites),
 		"satellites": satellites,
+	})
+}
+
+// GetPositions returns lightweight position snapshots for all tracked satellites.
+// GET /api/positions
+// Optional query param: time (RFC3339 / RFC3339Nano / unix seconds / unix millis)
+func (h *Handlers) GetPositions(c *fiber.Ctx) error {
+	requestedTime, err := parseOptionalTimeParam(c.Query("time"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid time parameter",
+		})
+	}
+
+	var positions []models.SatellitePosition
+	responseTime := time.Now().UTC()
+	if requestedTime.IsZero() {
+		positions = h.service.GetPositions()
+	} else {
+		responseTime = requestedTime
+		positions = h.service.GetPositionsAtTime(requestedTime)
+	}
+
+	return c.JSON(fiber.Map{
+		"time":      responseTime.Format(time.RFC3339Nano),
+		"count":     len(positions),
+		"positions": positions,
 	})
 }
 

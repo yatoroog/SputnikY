@@ -1,4 +1,11 @@
-import type { Satellite, OrbitPoint, Pass, AreaPass, FilterParams } from '@/types';
+import type {
+  Satellite,
+  OrbitPoint,
+  Pass,
+  AreaPass,
+  FilterParams,
+  SatellitePosition,
+} from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -64,6 +71,12 @@ type PresetsResponse = {
   presets: string[];
 };
 
+type PositionsResponse = {
+  time: string;
+  count: number;
+  positions: SatellitePosition[];
+};
+
 function normalizeSatellite(satellite: SatelliteWire): Satellite | null {
   const normalized = {
     id: satellite.id,
@@ -105,6 +118,23 @@ function normalizePass(pass: PassWire): Pass {
     maxElevation: pass.maxElevation ?? pass.max_elevation ?? 0,
     duration: pass.duration ?? 0,
   };
+}
+
+function normalizePosition(position: SatellitePosition): SatellitePosition | null {
+  if (
+    typeof position.id !== 'string' ||
+    !Number.isFinite(position.lat) ||
+    position.lat < -90 ||
+    position.lat > 90 ||
+    !Number.isFinite(position.lng) ||
+    position.lng < -180 ||
+    position.lng > 180 ||
+    !isRenderableAltitudeKm(position.alt)
+  ) {
+    return null;
+  }
+
+  return position;
 }
 
 export async function fetchSatellites(filters?: FilterParams): Promise<Satellite[]> {
@@ -222,4 +252,15 @@ export async function loadPreset(name: string): Promise<Satellite[]> {
   );
 
   return fetchSatellites();
+}
+
+export async function fetchPositionsAtTime(time: Date): Promise<SatellitePosition[]> {
+  const data = await request<PositionsResponse | SatellitePosition[]>(
+    `/api/positions?time=${encodeURIComponent(time.toISOString())}`
+  );
+  const positions = Array.isArray(data) ? data : data.positions;
+
+  return positions
+    .map(normalizePosition)
+    .filter((position): position is SatellitePosition => position !== null);
 }

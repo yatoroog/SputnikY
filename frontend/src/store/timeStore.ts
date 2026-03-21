@@ -6,6 +6,7 @@ interface TimeStore {
   speed: number;
   isRealTime: boolean;
   setCurrentTime: (time: Date) => void;
+  advanceTime: (deltaMs: number) => void;
   togglePlay: () => void;
   setSpeed: (speed: number) => void;
   stepForward: () => void;
@@ -21,6 +22,11 @@ export const useTimeStore = create<TimeStore>()((set) => ({
 
   setCurrentTime: (time: Date) => set({ currentTime: time }),
 
+  advanceTime: (deltaMs: number) =>
+    set((state) => ({
+      currentTime: new Date(state.currentTime.getTime() + deltaMs),
+    })),
+
   togglePlay: () =>
     set((state) => ({
       isPlaying: !state.isPlaying,
@@ -30,7 +36,7 @@ export const useTimeStore = create<TimeStore>()((set) => ({
   setSpeed: (speed: number) =>
     set({
       speed,
-      isRealTime: speed === 1,
+      isRealTime: false,
     }),
 
   stepForward: () =>

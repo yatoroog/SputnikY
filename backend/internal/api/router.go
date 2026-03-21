@@ -16,6 +16,7 @@ func SetupRoutes(app *fiber.App, service *satellite.SatelliteService, hub *ws.Hu
 
 	// Satellite endpoints
 	api.Get("/satellites", handlers.GetSatellites)
+	api.Get("/positions", handlers.GetPositions)
 	api.Get("/satellites/:id", handlers.GetSatelliteByID)
 	api.Get("/satellites/:id/orbit", handlers.GetSatelliteOrbit)
 

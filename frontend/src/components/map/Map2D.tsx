@@ -86,6 +86,16 @@ function makeDotIcon(
   });
 }
 
+function applyMarkerTransition(marker: DGMarker) {
+  const markerElement = (marker as { _icon?: HTMLElement; getElement?: () => HTMLElement | null })
+    .getElement?.() ?? (marker as { _icon?: HTMLElement })._icon;
+
+  if (markerElement) {
+    markerElement.style.transition = 'transform 220ms linear';
+    markerElement.style.willChange = 'transform';
+  }
+}
+
 /* ── component ───────────────────────────────────────────── */
 
 export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
@@ -216,13 +226,16 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
       if (existing) {
         existing.setLatLng([lat, lng]);
+        applyMarkerTransition(existing);
         // Refresh icon if selection state changed
         if (needsIconRefresh.has(sat.id)) {
           existing.setIcon(makeDotIcon(DG, color, isSelected));
+          applyMarkerTransition(existing);
         }
       } else {
         const icon = makeDotIcon(DG, color, isSelected);
         const marker = DG.marker([lat, lng], { icon }).addTo(map);
+        applyMarkerTransition(marker);
         marker.bindPopup(
           `<b>${sat.name}</b><br>` +
             `<small>${sat.orbitType} | ${altKm.toFixed(1)} km | NORAD ${sat.noradId}</small>`

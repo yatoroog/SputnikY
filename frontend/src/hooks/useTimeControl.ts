@@ -3,26 +3,26 @@
 import { useEffect } from 'react';
 import { useTimeStore } from '@/store/timeStore';
 
-const TICK_INTERVAL = 1000;
+const TICK_INTERVAL_MS = 100;
 
 export function useTimeControl() {
-  const { currentTime, isPlaying, speed, isRealTime, setCurrentTime } = useTimeStore();
+  const { isPlaying } = useTimeStore();
 
   useEffect(() => {
     if (!isPlaying) return;
 
     const intervalId = setInterval(() => {
+      const { isRealTime, speed, setCurrentTime, advanceTime } = useTimeStore.getState();
+
       if (isRealTime) {
         setCurrentTime(new Date());
       } else {
-        setCurrentTime(
-          new Date(currentTime.getTime() + speed * TICK_INTERVAL)
-        );
+        advanceTime(speed * TICK_INTERVAL_MS);
       }
-    }, TICK_INTERVAL);
+    }, TICK_INTERVAL_MS);
 
     return () => clearInterval(intervalId);
-  }, [isPlaying, speed, isRealTime, currentTime, setCurrentTime]);
+  }, [isPlaying]);
 
   return useTimeStore();
 }
