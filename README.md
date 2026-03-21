@@ -1,152 +1,183 @@
 # SputnikX
 
-Интерактивная веб-платформа для визуализации спутникового каталога, орбит и пролётов над точкой наблюдения.
+Интерактивная веб-платформа для визуализации спутникового каталога, орбит, пролётов и сближений над выбранной зоной наблюдения.
 
-Проект сочетает:
-- 3D-глобус на CesiumJS
-- 2D-карту на 2GIS MapGL
-- backend на Go с расчётом орбит по TLE через SGP4
-- real-time обновление позиций по WebSocket
-- импорт каталога из N2YO с fallback на локальный TLE-файл
+Проект объединяет:
+- 3D-глобус на CesiumJS;
+- 2D-карту на 2GIS MapGL;
+- backend на Go с расчётом орбит по TLE через SGP4;
+- real-time обновление позиций по WebSocket;
+- загрузку каталога из N2YO с fallback на локальный TLE;
+- пользовательские TLE-загрузки и предустановленные наборы;
+- уведомления о сближениях спутников для заданной зоны наблюдения.
 
 ## Возможности
 
 - Просмотр спутников на 3D-глобусе и 2D-карте.
-- Переключение между `3D` и `2D` режимами без смены состояния приложения.
-- Real-time позиции спутников через WebSocket.
-- Режим симуляции времени: пауза, перемотка, шаг назад/вперёд, ускорение.
-- Отрисовка орбиты, зоны покрытия и выделение выбранного спутника.
+- Переключение между `3D` и `2D` режимами без сброса состояния UI.
+- Real-time поток позиций через WebSocket.
+- Режим симуляции времени: пауза, шаг назад/вперёд, ускорение до `1000x`, возврат в реальное время.
+- Отрисовка орбитального трека и зоны покрытия выбранного спутника.
+- Режим `close-up` для слежения камерой за выбранным спутником в 3D.
 - Поиск и фильтрация каталога по стране, типу орбиты, назначению и строке поиска.
-- Прогноз пролётов конкретного спутника над точкой.
-- Прогноз ближайших пролётов над выбранной областью сразу для всего каталога.
-- Загрузка собственного TLE-файла.
-- Загрузка предустановленных TLE-наборов.
-- Показ реального источника каталога: `n2yo`, `local_tle`, `uploaded_tle`, `preset`.
+- Автоматическое формирование и сравнение спутниковых группировок по названиям серий.
+- Прогноз пролётов выбранного спутника над точкой наблюдения.
+- Прогноз ближайших пролётов по точке для всего текущего каталога.
+- Прогноз сближений одного спутника или всего каталога с заданной зоной наблюдения.
+- Центр уведомлений о сближениях спутников с фиксированной зоной наблюдения.
+- Загрузка собственного `.tle`/`.txt` файла.
+- Загрузка встроенных TLE-пресетов.
+- Отображение реального источника каталога через `catalog_status`.
 
-## Что внутри
+## Структура проекта
 
 ```text
 web-platform-mso/
-├── backend/                  Go API, расчёты орбит, WebSocket, TLE/N2YO
-│   ├── cmd/server/           точка входа backend
-│   ├── internal/api/         HTTP handlers, router, middleware
-│   ├── internal/n2yo/        клиент N2YO REST API
-│   ├── internal/satellite/   сервис каталога, SGP4, passes, orbit logic
-│   ├── internal/tle/         парсинг TLE и пресеты
-│   ├── internal/ws/          WebSocket hub и клиенты
-│   └── data/stations.tle     локальный fallback-каталог
-├── frontend/                 Next.js приложение
-│   ├── src/app/              корневая страница и layout
-│   ├── src/components/map/   3D-глобус Cesium и 2D-карта
-│   ├── src/components/ui/    sidebar, timeline, passes, upload UI
-│   ├── src/hooks/            загрузка каталога, WS, simulated time
-│   ├── src/lib/              API-клиент и утилиты
-│   ├── src/store/            Zustand stores
-│   └── public/               ассеты карты, модели спутника, текстуры Земли
-├── shared/                   общий API-контракт в TypeScript
-└── docker-compose.yml        локальный запуск frontend + backend
+├── backend/
+│   ├── cmd/server/              точка входа Fiber backend
+│   ├── data/stations.tle        локальный fallback-каталог
+│   ├── internal/api/            REST handlers, router, middleware
+│   ├── internal/cache/          утилиты кэширования позиций
+│   ├── internal/celestrak/      заготовка клиента CelesTrak
+│   ├── internal/models/         модели API, WS и доменные типы
+│   ├── internal/n2yo/           клиент N2YO REST API
+│   ├── internal/satellite/      propagation, orbit/pass/approach logic, catalog service
+│   ├── internal/tle/            парсер TLE и встроенные пресеты
+│   └── internal/ws/             WebSocket hub и клиентские подписки
+├── frontend/
+│   ├── public/                  GLB-модель, Earth textures, skybox, GeoJSON, Cesium assets
+│   ├── scripts/                 copy-cesium и утилиты ассетов
+│   ├── src/app/                 страница, layout, глобальные стили
+│   ├── src/components/map/      CesiumGlobe, Map2D, orbit/model entities
+│   ├── src/components/ui/       sidebar, uploader, passes, comparison, notifications, timeline
+│   ├── src/hooks/               catalog, WS, simulated time, notifications
+│   ├── src/lib/                 API-клиент, groupings, notifications, helpers
+│   ├── src/store/               Zustand stores
+│   └── src/types/               frontend-типы
+├── shared/api-contract.ts       общий TypeScript-контракт API
+└── docker-compose.yml           локальный запуск frontend + backend
 ```
+
+Примечания:
+- `frontend/public/cesium/` подготавливается скриптом `frontend/scripts/copy-cesium.mjs` при `npm run dev` и `npm run build`.
+- `backend/internal/celestrak/` сейчас не участвует в runtime-цепочке запуска, но лежит в репозитории как заготовка альтернативного клиента.
+- Основное состояние каталога backend хранит только в памяти процесса, без БД.
 
 ## Архитектура
 
-### 1. Источники данных
+### Источники каталога
 
-Backend собирает каталог спутников из одного из четырёх источников:
+Backend загружает и помечает каталог одним из источников:
 
-- `n2yo` — попытка получить TLE через N2YO REST API
-- `local_tle` — fallback на `backend/data/stations.tle`
-- `uploaded_tle` — каталог, загруженный пользователем
-- `preset` — один из встроенных наборов TLE
+- `n2yo` — стартовая загрузка и периодический refresh через N2YO API;
+- `local_tle` — fallback на `backend/data/stations.tle`;
+- `uploaded_tle` — ручная загрузка raw TLE-текста;
+- `preset` — загрузка одного из встроенных наборов.
 
-Текущий источник и время последней синхронизации возвращаются в `catalog_status`.
+Дополнительно:
 
-### 2. Backend слой
+- при отсутствии `N2YO_API_KEY` backend сразу стартует на локальном TLE;
+- при ошибке чтения локального файла backend пытается использовать встроенный preset `stations`;
+- текущее состояние источника возвращается в `catalog_status` вместе с `last_sync_at` и `note`.
 
-Основные модули backend:
+### Backend
 
-- `cmd/server/main.go`
-  - инициализация сервиса
-  - старт Fiber-приложения
-  - запуск background workers
-  - первичная загрузка каталога через `N2YO -> fallback local TLE`
-- `internal/satellite/service.go`
-  - in-memory каталог спутников
-  - фильтрация
-  - обновление позиций
-  - расчёт орбит
-  - хранение `catalog_status`
-- `internal/satellite/propagator.go`
-  - SGP4/SDP4 propagation
-  - определение орбитального типа
-  - расчёт производных параметров
-- `internal/satellite/passes.go`
-  - прогноз пролётов над точкой наблюдения
-- `internal/n2yo/client.go`
-  - discovery спутников через `/above`
-  - догрузка TLE через `/tle`
-  - дедупликация по NORAD ID
-- `internal/api/`
-  - REST endpoints
-  - валидация query/body
-  - сериализация ответов
-- `internal/ws/`
-  - WebSocket hub
-  - вещание позиций всем подключённым клиентам
+Основные backend-модули:
 
-### 3. Frontend слой
+- `backend/cmd/server/main.go`
+  - старт Fiber-приложения;
+  - первичная загрузка каталога;
+  - worker обновления позиций каждые `2s`;
+  - worker refresh из N2YO каждые `2h`, если задан API key.
+- `backend/internal/satellite/service.go`
+  - in-memory каталог спутников;
+  - фильтрация;
+  - обновление текущих позиций;
+  - получение позиций для произвольного времени;
+  - хранение `catalog_status` и `filter_facets`.
+- `backend/internal/satellite/propagator.go`
+  - SGP4/SDP4 propagation;
+  - вычисление орбитального типа;
+  - производные орбитальные параметры;
+  - эвристическое определение страны.
+- `backend/internal/satellite/passes.go`
+  - прогноз пролётов над точкой наблюдения.
+- `backend/internal/satellite/approaches.go`
+  - прогноз сближений с зоной наблюдения по радиусу.
+- `backend/internal/n2yo/client.go`
+  - discovery каталога через N2YO;
+  - дедупликация по NORAD ID;
+  - загрузка TLE по категориям и точкам наблюдения.
+- `backend/internal/tle/`
+  - парсинг TLE из строки и файла;
+  - встроенные пресеты: `amateur`, `gps`, `starlink`, `stations`, `weather`.
+- `backend/internal/api/`
+  - REST endpoints;
+  - валидация query/body;
+  - сериализация ответов.
+- `backend/internal/ws/`
+  - WebSocket hub;
+  - broadcast позиций;
+  - поддержка клиентских `subscribe`/`unsubscribe`.
 
-Основные модули frontend:
+### Frontend
 
-- `src/app/page.tsx`
-  - корневая композиция интерфейса
-  - переключение `3D / 2D`
-  - sidebar, карточка спутника, панель пролётов, timeline
-- `src/components/map/CesiumGlobe.tsx`
-  - 3D-глобус на Cesium
-  - realistic day/night Earth imagery
-  - ночные огни на теневой стороне
-  - спутники, орбита, зона покрытия, режим close-up
-- `src/components/map/Map2D.tsx`
-  - 2D-карта на 2GIS MapGL
-  - маркеры спутников
-  - орбита и покрытие в плоском режиме
-- `src/hooks/useSatellites.ts`
-  - загрузка каталога с учётом фильтров
-- `src/hooks/useWebSocket.ts`
-  - real-time позиции в режиме реального времени
-- `src/hooks/useSimulatedPositions.ts`
-  - загрузка исторических/симулируемых позиций при управлении временем
-- `src/store/*.ts`
-  - Zustand stores для каталога, фильтров, времени и темы
-- `src/lib/api.ts`
-  - единый typed API-клиент для frontend
+Основные frontend-модули:
 
-### 4. Поток данных
+- `frontend/src/app/page.tsx`
+  - сборка интерфейса;
+  - переключение `3D / 2D`;
+  - sidebar, карточка спутника, панель пролётов, центр уведомлений, таймлайн, сравнение группировок.
+- `frontend/src/components/map/CesiumGlobe.tsx`
+  - 3D-глобус на Cesium;
+  - day/night текстуры Земли;
+  - skybox;
+  - спутники, орбита, зона покрытия, режим close-up.
+- `frontend/src/components/map/Map2D.tsx`
+  - 2D-карта на 2GIS MapGL;
+  - маркеры спутников;
+  - клик по карте для поиска ближайших пролётов;
+  - орбита и зона покрытия выбранного спутника.
+- `frontend/src/hooks/useSatellites.ts`
+  - загрузка каталога с фильтрами;
+  - сохранение `catalog_status` и `filter_facets` в store.
+- `frontend/src/hooks/useWebSocket.ts`
+  - real-time синхронизация позиций.
+- `frontend/src/hooks/useSimulatedPositions.ts`
+  - запрос `/api/positions?time=...` при симуляции времени.
+- `frontend/src/hooks/useSatelliteNotifications.ts`
+  - polling `/api/approaches/area`;
+  - создание локальных уведомлений браузера и UI-уведомлений.
+- `frontend/src/lib/groupings.ts`
+  - автоматическая агрегация спутников в группы по названиям серий.
+- `frontend/src/lib/api.ts`
+  - typed API-клиент для всех frontend-запросов.
+
+### Поток данных
 
 ```text
 N2YO / local TLE / uploaded TLE / preset
                 │
                 v
-     backend/internal/tle + internal/n2yo
+      backend/internal/n2yo + tle
                 │
                 v
-     SatelliteService (in-memory catalog)
+      SatelliteService (in-memory catalog)
                 │
-      ┌─────────┴─────────┐
-      │                   │
-      v                   v
- REST API            Background workers
- /api/*              update positions каждые 2 сек
-      │                   │
-      │                   v
-      │              WebSocket /ws/positions
-      │                   │
-      └─────────┬─────────┘
-                v
-         Frontend hooks + stores
-                │
-                v
-        Cesium 3D / 2GIS 2D / UI panels
+      ┌─────────┼─────────┐
+      │         │         │
+      v         v         v
+  /api/*   2s position   2h N2YO
+           refresh       refresh
+      │         │
+      │         v
+      │    /ws/positions
+      │
+      v
+frontend hooks + Zustand stores
+      │
+      v
+Cesium 3D / 2GIS 2D / panels / notifications / comparison
 ```
 
 ## Технологический стек
@@ -156,7 +187,7 @@ N2YO / local TLE / uploaded TLE / preset
 - Go `1.22`
 - Fiber `v2`
 - `go-satellite` для SGP4/SDP4
-- `zerolog` для логирования
+- `zerolog`
 - Fiber WebSocket
 
 ### Frontend
@@ -177,7 +208,7 @@ N2YO / local TLE / uploaded TLE / preset
 
 ## API
 
-### Служебные маршруты
+### Служебный маршрут
 
 | Метод | Путь | Описание |
 |------|------|----------|
@@ -187,46 +218,75 @@ N2YO / local TLE / uploaded TLE / preset
 
 | Метод | Путь | Описание |
 |------|------|----------|
-| `GET` | `/api/satellites` | список спутников + `catalog_status` |
-| `GET` | `/api/satellites/:id` | детали спутника |
+| `GET` | `/api/satellites` | список спутников, `catalog_status`, `filter_facets` |
+| `GET` | `/api/satellites/:id` | детали конкретного спутника |
 | `GET` | `/api/positions` | позиции спутников на текущее или заданное время |
 | `GET` | `/api/satellites/:id/orbit` | орбитальный трек спутника |
 
-Параметры `GET /api/satellites`:
+Что важно знать:
 
-- `country`
-- `orbit_type`
-- `purpose`
-- `search`
+- `GET /api/satellites` возвращает не только каталог, но и `catalog_status`, `filter_facets`.
+- Объекты спутников содержат текущие вычисленные координаты и производные параметры орбиты.
+- В деталях спутника backend также возвращает исходный `tle`.
 
-Параметры `GET /api/positions`:
+Параметры:
 
-- `time` — `RFC3339`, `RFC3339Nano`, Unix seconds или Unix millis
-
-Параметры `GET /api/satellites/:id/orbit`:
-
-- `duration` — длительность в минутах, по умолчанию `90`
+- `GET /api/satellites`
+  - `country`
+  - `orbit_type`
+  - `purpose`
+  - `search`
+- `GET /api/positions`
+  - `time` — `RFC3339`, `RFC3339Nano`, Unix seconds или Unix millis
+- `GET /api/satellites/:id/orbit`
+  - `duration` — длительность в минутах, по умолчанию `90`, допустимо `1..1440`
 
 ### Пролёты
 
 | Метод | Путь | Описание |
 |------|------|----------|
 | `GET` | `/api/passes` | прогноз пролётов выбранного спутника над точкой |
-| `GET` | `/api/passes/area` | ближайшие пролёты по области для всего каталога |
+| `GET` | `/api/passes/area` | ближайшие пролёты для всех спутников над точкой |
 
-Параметры `GET /api/passes`:
+Параметры:
 
-- `id`
-- `lat`
-- `lng`
-- `alt` — необязательный, по умолчанию `0`
-- `hours` — по умолчанию `24`
+- `GET /api/passes`
+  - `id`
+  - `lat`
+  - `lng`
+  - `alt` — необязательный, по умолчанию `0`
+  - `hours` — по умолчанию `24`, допустимо `1..168`
+- `GET /api/passes/area`
+  - `lat`
+  - `lng`
+  - `hours` — по умолчанию `6`, допустимо `1..24`
 
-Параметры `GET /api/passes/area`:
+Особенности:
 
-- `lat`
-- `lng`
-- `hours` — по умолчанию `6`, максимум `24`
+- `GET /api/passes/area` сортирует события по `aos` и ограничивает ответ `50` ближайшими результатами.
+
+### Сближения
+
+| Метод | Путь | Описание |
+|------|------|----------|
+| `GET` | `/api/approaches` | сближения выбранного спутника с зоной наблюдения |
+| `GET` | `/api/approaches/area` | сближения всего каталога с зоной наблюдения |
+
+Параметры:
+
+- `GET /api/approaches`
+  - `id`
+  - `lat`
+  - `lng`
+  - `radius_km` — по умолчанию `100`, допустимо `>0` и `<=5000`
+  - `hours` — по умолчанию `4`, допустимо `1..168`
+  - `notify_before_min` — по умолчанию `60`, допустимо `0..1440`
+- `GET /api/approaches/area`
+  - `lat`
+  - `lng`
+  - `radius_km` — по умолчанию `100`, допустимо `>0` и `<=5000`
+  - `hours` — по умолчанию `4`, допустимо `1..168`
+  - `notify_before_min` — по умолчанию `60`, допустимо `0..1440`
 
 ### Управление TLE
 
@@ -234,12 +294,13 @@ N2YO / local TLE / uploaded TLE / preset
 |------|------|----------|
 | `POST` | `/api/tle/upload` | загрузка raw TLE-текста |
 | `GET` | `/api/tle/presets` | список доступных пресетов |
-| `POST` | `/api/tle/presets/:name` | загрузка пресета в каталог |
+| `POST` | `/api/tle/presets/:name` | загрузка выбранного пресета |
 
 Важно:
 
 - `POST /api/tle/upload` принимает `text/plain`, а не `multipart/form-data`.
-- После загрузки TLE frontend повторно запрашивает каталог через `/api/satellites`.
+- Frontend позволяет выбрать файл, но перед отправкой читает его содержимое и отправляет как raw text.
+- Ручная загрузка TLE и загрузка пресета расширяют текущий in-memory каталог backend, а не заменяют его.
 
 ### WebSocket
 
@@ -247,7 +308,7 @@ N2YO / local TLE / uploaded TLE / preset
 |---------|------|----------|
 | `WS` | `/ws/positions` | stream позиций спутников в реальном времени |
 
-Формат сообщения:
+Исходящее сообщение сервера:
 
 ```json
 {
@@ -258,18 +319,46 @@ N2YO / local TLE / uploaded TLE / preset
 }
 ```
 
+Поддерживаемые сообщения клиента:
+
+```json
+{ "type": "subscribe", "ids": ["sat-1", "sat-2"] }
+```
+
+```json
+{ "type": "unsubscribe", "ids": ["sat-1"] }
+```
+
+```json
+{ "type": "unsubscribe_all", "ids": [] }
+```
+
+Текущий frontend использует общий поток позиций для всего каталога, но backend уже поддерживает выборочную подписку.
+
 ## Запуск
+
+### Требования
+
+- Docker и Docker Compose plugin, либо
+- Go `1.22+`, Node.js `20+`, npm `10+`.
 
 ### Docker Compose
 
-Перед запуском создайте root `.env` из шаблона:
+Создайте root `.env` из шаблона:
 
 ```bash
 cp .env.example .env
 ```
 
+Дальше:
+
+- замените значения-заглушки на реальные, если используете внешние ключи;
+- чтобы принудительно работать только на локальном TLE, оставьте `N2YO_API_KEY=` пустым.
+
+Запуск:
+
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 После запуска:
@@ -277,21 +366,34 @@ docker-compose up --build
 - frontend: `http://localhost:3000`
 - backend: `http://localhost:8080`
 
+Важно:
+
+- для frontend значения `NEXT_PUBLIC_*` используются на этапе build;
+- после изменения `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_CESIUM_TOKEN` или `NEXT_PUBLIC_2GIS_MAPGL_KEY` контейнер frontend нужно пересобрать;
+- самый простой способ: снова выполнить `docker compose up --build`.
+
 ### Локально без Docker
 
 #### 1. Backend
 
 ```bash
 cd backend
-go mod tidy
+go mod download
 go run cmd/server/main.go
+```
+
+Если нужны свои env-переменные:
+
+```bash
+cd backend
+PORT=8080 N2YO_API_KEY=your_n2yo_key TLE_DATA_PATH=data/stations.tle go run cmd/server/main.go
 ```
 
 #### 2. Frontend
 
 ```bash
 cd frontend
-npm install
+npm ci
 cp .env.local.example .env.local
 npm run dev
 ```
@@ -301,98 +403,55 @@ npm run dev
 - frontend: `http://localhost:3000`
 - backend: `http://localhost:8080`
 
+Примечание:
+
+- `npm run dev` и `npm run build` автоматически копируют runtime-ассеты Cesium в `frontend/public/cesium`.
+
 ## Переменные окружения
 
-Для `docker-compose` используется root-файл [`.env.example`](/Users/axidend/Documents/Hackaton/web-platform-mso/.env.example).
+Для Docker Compose используется root-шаблон [`.env.example`](./.env.example).
+
+Для локального frontend используется [`.env.local.example`](./frontend/.env.local.example).
 
 ### Backend
 
-| Переменная | По умолчанию | Описание |
-|-----------|--------------|----------|
+| Переменная | Значение по умолчанию | Описание |
+|-----------|------------------------|----------|
 | `PORT` | `8080` | порт backend |
 | `N2YO_API_KEY` | пусто | ключ N2YO REST API |
 | `TLE_DATA_PATH` | `data/stations.tle` | путь к локальному TLE-файлу |
 
-Пример:
-
-```bash
-export PORT=8080
-export N2YO_API_KEY=your_n2yo_key
-export TLE_DATA_PATH=data/stations.tle
-```
-
 ### Frontend
 
-Файл-шаблон: [frontend/.env.local.example](/Users/axidend/Documents/Hackaton/web-platform-mso/frontend/.env.local.example)
-
-| Переменная | По умолчанию | Описание |
-|-----------|--------------|----------|
+| Переменная | Значение по умолчанию | Описание |
+|-----------|------------------------|----------|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | base URL backend API |
 | `NEXT_PUBLIC_WS_URL` | `ws://localhost:8080` | base URL для WebSocket |
 | `NEXT_PUBLIC_CESIUM_TOKEN` | пусто | опциональный Cesium Ion token |
 | `NEXT_PUBLIC_2GIS_MAPGL_KEY` | пусто | ключ 2GIS MapGL для 2D-режима |
 
-Пример:
+Примечания:
 
-```bash
-NEXT_PUBLIC_API_URL=http://localhost:8080
-NEXT_PUBLIC_WS_URL=ws://localhost:8080
-NEXT_PUBLIC_CESIUM_TOKEN=your_cesium_ion_token_here
-NEXT_PUBLIC_2GIS_MAPGL_KEY=your_2gis_mapgl_key_here
-```
+- все переменные с префиксом `NEXT_PUBLIC_` попадают в клиентский bundle и не являются секретами;
+- `NEXT_PUBLIC_CESIUM_TOKEN` можно не задавать, 3D-режим всё равно работает на локальных ассетах;
+- без `NEXT_PUBLIC_2GIS_MAPGL_KEY` 2D-режим не инициализируется и показывает понятное сообщение об ошибке;
+- `.env`, `.env.local` и `.env.*.local` не должны коммититься и уже игнорируются git.
 
-## Безопасность ключей
+## Хранение состояния
 
-- Секретный server-side ключ в проекте только один: `N2YO_API_KEY`.
-- Он больше не захардкожен в backend и должен задаваться только через env.
-- Если `N2YO_API_KEY` не задан, backend не ходит во внешний API и стартует на локальном `TLE`-каталоге.
-- Все переменные с префиксом `NEXT_PUBLIC_` не являются секретами. Они попадают в клиентский bundle и видны в браузере.
-- Поэтому `NEXT_PUBLIC_CESIUM_TOKEN` и `NEXT_PUBLIC_2GIS_MAPGL_KEY` нужно хранить в env для удобства конфигурации, но не считать их приватными секретами.
-- Файлы `.env`, `.env.local` и `.env.*.local` игнорируются git и не должны коммититься.
+- Backend не использует БД: каталог, позиции и источник данных живут только в памяти процесса.
+- После рестарта backend ручные TLE-загрузки и загруженные пресеты теряются.
+- Frontend-уведомления хранятся в браузере через `localStorage`.
 
-## Пользовательские сценарии
+## Актуальные нюансы и ограничения
 
-### Мониторинг каталога
-
-- Открыть список спутников в sidebar.
-- Отфильтровать по типу орбиты, стране, назначению.
-- Выбрать спутник и увидеть детали, орбиту и покрытие.
-
-### Симуляция времени
-
-- Поставить timeline на паузу.
-- Перематывать время вперёд/назад.
-- Ускорять модель до `1000x`.
-- Сравнивать расположение спутников в разные моменты времени.
-
-### Анализ пролётов
-
-- Кликнуть по карте/глобусу.
-- Получить ближайшие пролёты в выбранной области.
-- Перейти к конкретному спутнику и посмотреть его трек.
-
-### Импорт данных
-
-- Загрузить собственный `.tle`/`.txt` файл.
-- Или выбрать готовый пресет.
-- Сразу увидеть новый каталог на карте.
-
-## Актуальные особенности проекта
-
-- Frontend не ходит напрямую в N2YO. Он работает только с backend API.
-- Backend сам решает, откуда заполнить каталог: `N2YO` или `local TLE`.
-- В `/api/satellites` возвращается `catalog_status`, чтобы UI понимал реальный источник данных.
-- В 3D-режиме используется отдельная day/night Earth imagery:
-  - дневная карта Земли
-  - ночные огни только на теневой стороне
-- Если `NEXT_PUBLIC_2GIS_MAPGL_KEY` не задан, 2D-режим показывает понятное сообщение об ошибке вместо молчаливого падения.
-
-## Ограничения
-
-- N2YO REST API ограничен rate limit'ами. При недоступности, лимите или отсутствии `N2YO_API_KEY` backend уходит в fallback на локальный TLE.
-- Каталог `n2yo` не является полным мировым каталогом спутников. Он собирается через discovery по категориям и observation points.
-- Поле `country` сейчас определяется эвристически на backend, а не приходит напрямую из N2YO REST API.
-- При ручной загрузке TLE и загрузке пресетов каталог расширяется поверх текущего in-memory состояния backend.
+- N2YO ограничен rate limit'ами; при ошибке backend уходит в fallback на локальный TLE или сохраняет текущий каталог без замены.
+- Поля `country` и `purpose` определяются эвристически по имени спутника и TLE, а не приходят как строгая нормализованная справочная классификация.
+- Центр уведомлений сейчас отслеживает фиксированную зону наблюдения: `Ростов-на-Дону`, радиус `100 км`.
+- Уведомления о сближениях работают только в режиме реального времени; при симуляции времени polling приостанавливается.
+- Сравнение группировок строится автоматически по названиям серий и ограничено `4` выбранными группами одновременно.
+- Ручные загрузки TLE и пресетов расширяют текущий каталог, но refresh из N2YO полностью заменяет каталог свежими данными.
+- В репозитории пока нет отдельного набора unit/integration tests; основная проверка сейчас это `go test ./...` и production build frontend.
 
 ## Полезные команды
 
@@ -410,6 +469,8 @@ cd frontend
 npm run build
 ```
 
-## Статус
+### Docker
 
-Проект находится в активной разработке.
+```bash
+docker compose up --build
+```

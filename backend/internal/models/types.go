@@ -74,6 +74,31 @@ type Pass struct {
 	Duration      int     `json:"duration"`
 }
 
+// ObserverArea describes a circular observation area on the ground.
+type ObserverArea struct {
+	Name      string  `json:"name,omitempty"`
+	Latitude  float64 `json:"lat"`
+	Longitude float64 `json:"lng"`
+	RadiusKm  float64 `json:"radius_km"`
+}
+
+// Approach describes a satellite ground-track approach within a given observer radius.
+type Approach struct {
+	SatelliteID        string  `json:"satellite_id"`
+	SatelliteName      string  `json:"satellite_name"`
+	StartAt            int64   `json:"start_at"`
+	EndAt              int64   `json:"end_at"`
+	ClosestAt          int64   `json:"closest_at"`
+	NotifyAt           int64   `json:"notify_at"`
+	MinDistanceKm      float64 `json:"min_distance_km"`
+	RadiusKm           float64 `json:"radius_km"`
+	Duration           int     `json:"duration"`
+	ClosestLatitude    float64 `json:"closest_lat"`
+	ClosestLongitude   float64 `json:"closest_lng"`
+	ClosestAltitudeKm  float64 `json:"closest_altitude_km"`
+	ClosestVelocityKmS float64 `json:"closest_velocity_km_s"`
+}
+
 // WSMessage is the envelope for all WebSocket messages.
 type WSMessage struct {
 	Type string      `json:"type"`

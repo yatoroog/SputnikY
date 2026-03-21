@@ -53,6 +53,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+button {
+  font: inherit;
+}
+
 /* ========================================
    Hide Cesium default UI
    ======================================== */

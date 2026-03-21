@@ -3,10 +3,16 @@ import type {
   OrbitPoint,
   Pass,
   AreaPass,
+  SatelliteApproach,
+  SatelliteApproachesResponse,
+  AreaSatelliteApproach,
+  AreaSatelliteApproachesResponse,
   FilterParams,
   SatellitePosition,
   CatalogStatus,
   FilterFacets,
+  ObserverArea,
+  TrackedSatellite,
 } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
@@ -96,6 +102,50 @@ type PositionsResponse = {
   positions: SatellitePosition[];
 };
 
+type ObserverAreaWire = Partial<ObserverArea> & {
+  radius_km?: number;
+};
+
+type TrackedSatelliteWire = Partial<TrackedSatellite> & {
+  norad_id?: number;
+  orbit_type?: string;
+};
+
+type SatelliteApproachWire = Partial<SatelliteApproach> & {
+  satellite_id?: string;
+  satellite_name?: string;
+  start_at?: number;
+  end_at?: number;
+  closest_at?: number;
+  notify_at?: number;
+  min_distance_km?: number;
+  radius_km?: number;
+  closest_lat?: number;
+  closest_lng?: number;
+  closest_altitude_km?: number;
+  closest_velocity_km_s?: number;
+};
+
+type SatelliteApproachesResponseWire = {
+  satellite: TrackedSatelliteWire;
+  observer: ObserverAreaWire;
+  hours: number;
+  notify_before_min?: number;
+  approaches: SatelliteApproachWire[];
+};
+
+type AreaSatelliteApproachWire = {
+  satellite?: TrackedSatelliteWire;
+  approach?: SatelliteApproachWire;
+};
+
+type AreaSatelliteApproachesResponseWire = {
+  observer: ObserverAreaWire;
+  hours: number;
+  notify_before_min?: number;
+  approaches: AreaSatelliteApproachWire[];
+};
+
 function normalizeSatellite(satellite: SatelliteWire): Satellite | null {
   const normalized = {
     id: satellite.id,
@@ -154,6 +204,54 @@ function normalizePosition(position: SatellitePosition): SatellitePosition | nul
   }
 
   return position;
+}
+
+function normalizeTrackedSatellite(satellite: TrackedSatelliteWire): TrackedSatellite {
+  return {
+    id: satellite.id ?? '',
+    name: satellite.name ?? '',
+    noradId: satellite.noradId ?? satellite.norad_id ?? 0,
+    orbitType: satellite.orbitType ?? satellite.orbit_type ?? '',
+    country: satellite.country ?? 'Unknown',
+    purpose: satellite.purpose ?? '',
+  };
+}
+
+function normalizeObserverArea(observer: ObserverAreaWire): ObserverArea {
+  return {
+    name: observer.name,
+    lat: observer.lat ?? 0,
+    lng: observer.lng ?? 0,
+    radiusKm: observer.radiusKm ?? observer.radius_km ?? 0,
+  };
+}
+
+function normalizeSatelliteApproach(approach: SatelliteApproachWire): SatelliteApproach {
+  return {
+    satelliteId: approach.satelliteId ?? approach.satellite_id ?? '',
+    satelliteName: approach.satelliteName ?? approach.satellite_name ?? '',
+    startAt: approach.startAt ?? approach.start_at ?? 0,
+    endAt: approach.endAt ?? approach.end_at ?? 0,
+    closestAt: approach.closestAt ?? approach.closest_at ?? 0,
+    notifyAt: approach.notifyAt ?? approach.notify_at ?? 0,
+    minDistanceKm: approach.minDistanceKm ?? approach.min_distance_km ?? 0,
+    radiusKm: approach.radiusKm ?? approach.radius_km ?? 0,
+    duration: approach.duration ?? 0,
+    closestLat: approach.closestLat ?? approach.closest_lat ?? 0,
+    closestLng: approach.closestLng ?? approach.closest_lng ?? 0,
+    closestAltitudeKm: approach.closestAltitudeKm ?? approach.closest_altitude_km ?? 0,
+    closestVelocityKmS:
+      approach.closestVelocityKmS ?? approach.closest_velocity_km_s ?? 0,
+  };
+}
+
+function normalizeAreaSatelliteApproach(
+  event: AreaSatelliteApproachWire
+): AreaSatelliteApproach {
+  return {
+    satellite: normalizeTrackedSatellite(event.satellite ?? {}),
+    approach: normalizeSatelliteApproach(event.approach ?? {}),
+  };
 }
 
 function normalizeCatalogStatus(status?: CatalogStatusWire | null): CatalogStatus | null {
@@ -282,6 +380,50 @@ export async function fetchAreaPasses(lat: number, lng: number, hours: number = 
     maxElevation: p.max_elevation ?? 0,
     duration: p.duration ?? 0,
   }));
+}
+
+export async function fetchSatelliteApproaches(
+  id: string,
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  hours: number = 4,
+  notifyBeforeMin: number = 60
+): Promise<SatelliteApproachesResponse> {
+  const data = await request<SatelliteApproachesResponseWire>(
+    `/api/approaches?id=${encodeURIComponent(id)}&lat=${lat}&lng=${lng}&radius_km=${radiusKm}&hours=${hours}&notify_before_min=${notifyBeforeMin}`
+  );
+
+  return {
+    satellite: normalizeTrackedSatellite(data.satellite),
+    observer: normalizeObserverArea(data.observer),
+    hours: data.hours ?? hours,
+    notifyBeforeMin: data.notify_before_min ?? notifyBeforeMin,
+    approaches: Array.isArray(data.approaches)
+      ? data.approaches.map(normalizeSatelliteApproach)
+      : [],
+  };
+}
+
+export async function fetchAreaSatelliteApproaches(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  hours: number = 4,
+  notifyBeforeMin: number = 60
+): Promise<AreaSatelliteApproachesResponse> {
+  const data = await request<AreaSatelliteApproachesResponseWire>(
+    `/api/approaches/area?lat=${lat}&lng=${lng}&radius_km=${radiusKm}&hours=${hours}&notify_before_min=${notifyBeforeMin}`
+  );
+
+  return {
+    observer: normalizeObserverArea(data.observer),
+    hours: data.hours ?? hours,
+    notifyBeforeMin: data.notify_before_min ?? notifyBeforeMin,
+    approaches: Array.isArray(data.approaches)
+      ? data.approaches.map(normalizeAreaSatelliteApproach)
+      : [],
+  };
 }
 
 export async function uploadTLE(file: File): Promise<SatelliteCatalog> {
