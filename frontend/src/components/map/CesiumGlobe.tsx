@@ -21,7 +21,7 @@ const LABEL_COLOR = '#f8fafc';
 const ORBIT_COLOR = '#a855f7';
 const COVERAGE_COLOR = '#a855f7';
 const EARTH_DAY_TEXTURE_URL = '/images/earth/earth-day-blue-marble.jpg?v=20260321b';
-const EARTH_NIGHT_TEXTURE_URL = '/images/earth/earth-night-lights.jpg?v=20260321a';
+const EARTH_NIGHT_TEXTURE_URL = '/images/earth/earth-night-lights.jpg?v=20260321c';
 const EARTH_DAY_NIGHT_ALPHA = 0.12;
 const EARTH_LIGHTS_DAY_ALPHA = 0.0;
 const EARTH_LIGHTS_NIGHT_ALPHA = 1.0;
