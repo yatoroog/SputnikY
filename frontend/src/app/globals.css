@@ -3,18 +3,33 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #111827;
+  /* === Liquid Glass Design System === */
+
+  /* Base colors */
+  --bg-primary: #080b14;
+  --bg-secondary: #0d1120;
   --accent-cyan: #06b6d4;
   --accent-blue: #3b82f6;
-  --text-primary: #e5e7eb;
-  --text-secondary: #9ca3af;
-  --ui-surface-top: rgba(13, 19, 40, 0.92);
-  --ui-surface-bottom: rgba(7, 12, 27, 0.86);
-  --ui-border-soft: rgba(103, 132, 189, 0.18);
-  --ui-border-strong: rgba(116, 221, 255, 0.26);
-  --ui-highlight: rgba(255, 255, 255, 0.08);
-  --ui-shadow: rgba(0, 0, 0, 0.38);
+  --text-primary: #eef2ff;
+  --text-secondary: #94a3c0;
+
+  /* Glass surface tokens */
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-hover: rgba(255, 255, 255, 0.09);
+  --glass-bg-active: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-hover: rgba(255, 255, 255, 0.2);
+  --glass-border-accent: rgba(6, 182, 212, 0.25);
+  --glass-highlight: rgba(255, 255, 255, 0.15);
+  --glass-shadow: rgba(0, 0, 0, 0.4);
+  --glass-blur: 24px;
+  --glass-saturation: 180%;
+  --glass-brightness: 1.1;
+
+  /* Refraction / prismatic tokens */
+  --prism-start: rgba(6, 182, 212, 0.15);
+  --prism-mid: rgba(139, 92, 246, 0.12);
+  --prism-end: rgba(59, 130, 246, 0.15);
 }
 
 * {
@@ -29,14 +44,18 @@ body {
   width: 100%;
   overflow: hidden;
   background:
-    radial-gradient(circle at top, rgba(26, 56, 112, 0.22), transparent 36%),
-    radial-gradient(circle at bottom left, rgba(10, 182, 212, 0.1), transparent 28%),
-    linear-gradient(180deg, #060915 0%, #050914 44%, #03070f 100%);
+    radial-gradient(ellipse at 20% 0%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 60%),
+    linear-gradient(180deg, #060a14 0%, #080b14 50%, #050812 100%);
   color: var(--text-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Hide Cesium default UI */
+/* ========================================
+   Hide Cesium default UI
+   ======================================== */
 .cesium-viewer-bottom,
 .cesium-viewer-animationContainer,
 .cesium-viewer-timelineContainer,
@@ -62,101 +81,219 @@ body {
   bottom: 0;
 }
 
-/* Custom scrollbar */
+/* ========================================
+   Custom scrollbar — glass style
+   ======================================== */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.025);
-  border-radius: 999px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(46, 162, 255, 0.52), rgba(10, 182, 212, 0.36));
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(74, 183, 255, 0.7), rgba(10, 182, 212, 0.5));
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Glow effects */
-.glow-cyan {
-  box-shadow: 0 0 15px rgba(6, 182, 212, 0.3), 0 0 30px rgba(6, 182, 212, 0.1);
-}
-
-.glow-blue {
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.3), 0 0 30px rgba(59, 130, 246, 0.1);
-}
-
-/* Panel base styles */
+/* ========================================
+   Liquid Glass — Panel
+   ======================================== */
 .panel-base {
   position: relative;
-  background:
-    linear-gradient(180deg, var(--ui-surface-top) 0%, var(--ui-surface-bottom) 100%);
-  backdrop-filter: blur(28px) saturate(140%);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-  border: 1px solid var(--ui-border-soft);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-border);
   border-radius: 24px;
   box-shadow:
-    0 28px 90px var(--ui-shadow),
-    inset 0 1px 0 var(--ui-highlight),
-    inset 0 -1px 0 rgba(8, 182, 212, 0.08);
+    0 8px 32px var(--glass-shadow),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
 }
 
+/* Top specular highlight — simulates light catching on glass edge */
 .panel-base::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
+  z-index: 1;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 28%),
-    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 36%);
-  opacity: 0.9;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 35%),
+    radial-gradient(ellipse at 30% 0%, rgba(6, 182, 212, 0.06), transparent 50%);
 }
 
-.premium-divider {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(126, 154, 199, 0.28), rgba(255, 255, 255, 0));
+/* Prismatic border glow — subtle rainbow refraction on edges */
+.panel-base::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: conic-gradient(
+    from 180deg,
+    var(--prism-start),
+    var(--prism-mid),
+    var(--prism-end),
+    var(--prism-mid),
+    var(--prism-start)
+  );
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 1px;
+  opacity: 0.4;
 }
 
+/* ========================================
+   Liquid Glass — Nested surface
+   ======================================== */
+.glass-surface {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-surface:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+/* ========================================
+   Liquid Glass — Input fields
+   ======================================== */
 .premium-field {
-  background:
-    linear-gradient(180deg, rgba(15, 22, 42, 0.92), rgba(9, 14, 28, 0.86));
-  border: 1px solid rgba(103, 132, 189, 0.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .premium-field:focus-within {
-  border-color: var(--ui-border-strong);
-  box-shadow:
-    0 0 0 1px rgba(34, 211, 238, 0.18),
-    0 10px 30px rgba(8, 145, 178, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-color: rgba(6, 182, 212, 0.3);
+  box-shadow: 0 0 24px rgba(6, 182, 212, 0.08), 0 0 0 1px rgba(6, 182, 212, 0.12);
+  background: rgba(0, 0, 0, 0.25);
 }
 
+/* ========================================
+   Liquid Glass — Icon buttons
+   ======================================== */
 .premium-icon-button {
-  background: linear-gradient(180deg, rgba(18, 26, 49, 0.92), rgba(10, 15, 30, 0.88));
-  border: 1px solid rgba(116, 221, 255, 0.12);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 10px 24px rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.premium-icon-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* ========================================
+   Liquid Glass — Chips / pills
+   ======================================== */
 .premium-chip {
-  border: 1px solid rgba(103, 132, 189, 0.18);
-  background: linear-gradient(180deg, rgba(17, 24, 44, 0.92), rgba(10, 15, 30, 0.88));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Pulse animation for selected satellite */
-@keyframes satellite-pulse {
-  0%,
+.premium-chip:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ========================================
+   Dividers — glass style
+   ======================================== */
+.premium-divider {
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+
+.glass-divider-h {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+}
+
+/* ========================================
+   Glow effects
+   ======================================== */
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.2), 0 0 40px rgba(6, 182, 212, 0.06);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 40px rgba(59, 130, 246, 0.06);
+}
+
+/* ========================================
+   Badge styles
+   ======================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ========================================
+   Moving light reflection animation
+   ======================================== */
+@keyframes glass-shimmer {
+  0% {
+    transform: translateX(-100%) rotate(12deg);
+  }
   100% {
+    transform: translateX(300%) rotate(12deg);
+  }
+}
+
+.glass-shimmer::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 30%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.03),
+    transparent
+  );
+  animation: glass-shimmer 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ========================================
+   Satellite pulse animation
+   ======================================== */
+@keyframes satellite-pulse {
+  0%, 100% {
     transform: scale(1);
     filter: drop-shadow(0 0 4px rgba(6, 182, 212, 0.6));
   }
@@ -170,24 +307,103 @@ body {
   animation: satellite-pulse 2s ease-in-out infinite;
 }
 
-/* Orbit glow */
 .orbit-line {
   filter: drop-shadow(0 0 4px rgba(6, 182, 212, 0.5));
 }
 
-/* Transition classes */
-.transition-panel {
-  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+/* ========================================
+   Floating light orbs (ambient effect)
+   ======================================== */
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(10px, -15px) scale(1.05); }
+  50% { transform: translate(-5px, 10px) scale(0.95); }
+  75% { transform: translate(-10px, -5px) scale(1.02); }
 }
 
-/* Badge styles */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  opacity: 0.5;
+  animation: float-orb 12s ease-in-out infinite;
+}
+
+/* ========================================
+   Transition utilities
+   ======================================== */
+.transition-glass {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ========================================
+   2D View overrides — opaque dark panels
+   on light map background
+   ======================================== */
+[data-view="2d"] {
+  --glass-bg: rgba(10, 14, 28, 0.92);
+  --glass-border: rgba(30, 40, 70, 0.6);
+  --glass-shadow: rgba(0, 0, 0, 0.5);
+  --glass-brightness: 0.95;
+  --glass-saturation: 120%;
+  --glass-blur: 28px;
+  --prism-start: rgba(6, 182, 212, 0.08);
+  --prism-mid: rgba(139, 92, 246, 0.06);
+  --prism-end: rgba(59, 130, 246, 0.08);
+}
+
+[data-view="2d"] .panel-base::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 35%),
+    radial-gradient(ellipse at 30% 0%, rgba(6, 182, 212, 0.04), transparent 50%);
+}
+
+[data-view="2d"] .premium-field {
+  background: rgba(6, 10, 22, 0.8);
+  border-color: rgba(40, 50, 80, 0.5);
+}
+
+[data-view="2d"] .premium-field:focus-within {
+  background: rgba(6, 10, 22, 0.85);
+}
+
+[data-view="2d"] .premium-icon-button {
+  background: rgba(12, 16, 32, 0.7);
+  border-color: rgba(40, 50, 80, 0.4);
+}
+
+[data-view="2d"] .premium-icon-button:hover {
+  background: rgba(16, 22, 42, 0.85);
+  border-color: rgba(60, 75, 120, 0.5);
+}
+
+[data-view="2d"] .premium-chip {
+  background: rgba(12, 16, 32, 0.7);
+  border-color: rgba(40, 50, 80, 0.4);
+}
+
+[data-view="2d"] .premium-chip:hover {
+  background: rgba(16, 22, 42, 0.8);
+  border-color: rgba(60, 75, 120, 0.5);
+}
+
+[data-view="2d"] .glass-divider-h {
+  background: linear-gradient(90deg, transparent, rgba(60, 75, 120, 0.3), transparent);
+}
+
+[data-view="2d"] .premium-divider {
+  background: linear-gradient(180deg, transparent, rgba(60, 75, 120, 0.3), transparent);
+}
+
+[data-view="2d"] .glass-shimmer::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.015), transparent);
+}
+
+[data-view="2d"] ::-webkit-scrollbar-thumb {
+  background: rgba(60, 75, 120, 0.4);
+}
+
+[data-view="2d"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(80, 100, 150, 0.5);
 }

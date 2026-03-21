@@ -53,8 +53,8 @@ export default function FilterPanel() {
     <div className="space-y-5">
       {/* Orbit type chips */}
       <div>
-        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#7f8ca7]">
-          {'\u0422\u0438\u043F \u043E\u0440\u0431\u0438\u0442\u044B'}
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#637196]">
+          {'Тип орбиты'}
         </p>
         <div className="flex flex-wrap gap-2">
           {ORBIT_TYPES.map((type) => (
@@ -62,10 +62,10 @@ export default function FilterPanel() {
               key={type.value}
               onClick={() => setOrbitType(type.value)}
               className={cn(
-                'premium-chip rounded-full px-4 py-2 text-xs font-semibold tracking-[0.16em] transition-all duration-300',
+                'premium-chip rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] transition-all duration-300',
                 orbitType === type.value
-                  ? 'border-[#4fdcf6]/40 bg-[linear-gradient(180deg,rgba(10,82,112,0.95),rgba(8,48,76,0.92))] text-[#82ecff] shadow-[0_14px_30px_rgba(6,182,212,0.14)]'
-                  : 'text-[#7f8ca7] hover:border-[#4fdcf6]/25 hover:text-[#eef4ff]'
+                  ? 'bg-accent-cyan/12 border-accent-cyan/25 text-accent-cyan shadow-[0_0_16px_rgba(6,182,212,0.08)]'
+                  : 'text-[#637196] hover:border-white/15 hover:text-[#eef2ff] hover:bg-white/[0.06]'
               )}
             >
               {type.label}
@@ -76,23 +76,23 @@ export default function FilterPanel() {
 
       {/* Country dropdown */}
       <div>
-        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#7f8ca7]">
-          {'\u0421\u0442\u0440\u0430\u043D\u0430'}
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#637196]">
+          {'Страна'}
         </p>
-        <div className="premium-field rounded-[18px]">
+        <div className="premium-field rounded-2xl">
           <select
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className="w-full cursor-pointer appearance-none rounded-[18px] bg-transparent py-3.5 pl-4 pr-11 text-[15px] text-[#eef4ff] focus:outline-none"
+            className="w-full cursor-pointer appearance-none rounded-2xl bg-transparent py-3 pl-4 pr-11 text-[14px] text-[#eef2ff] focus:outline-none"
             style={{
-              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%237f8ca7' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23637196' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
               backgroundPosition: 'right 14px center',
               backgroundRepeat: 'no-repeat',
               backgroundSize: '18px',
             }}
           >
             {countryOptions.map((c) => (
-              <option key={c.value} value={c.value} className="bg-cosmos-surface">
+              <option key={c.value} value={c.value} className="bg-[#0d1120]">
                 {c.label}
               </option>
             ))}
@@ -104,10 +104,10 @@ export default function FilterPanel() {
       {hasActiveFilters && (
         <button
           onClick={handleResetFilters}
-          className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-[#8a98b7] transition-all duration-300 hover:border-[#4fdcf6]/25 hover:text-[#82ecff]"
+          className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.04] px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-[#637196] transition-all duration-300 hover:border-accent-cyan/20 hover:text-accent-cyan hover:bg-accent-cyan/5"
         >
           <RotateCcw size={12} />
-          {'\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u0444\u0438\u043B\u044C\u0442\u0440\u044B'}
+          {'Сбросить фильтры'}
         </button>
       )}
     </div>
