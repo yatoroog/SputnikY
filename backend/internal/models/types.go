@@ -42,6 +42,12 @@ type CatalogStatus struct {
 	Note       string     `json:"note,omitempty"`
 }
 
+// FilterFacets describes available filter values for the whole in-memory catalog.
+type FilterFacets struct {
+	Countries []string `json:"countries"`
+	Purposes  []string `json:"purposes"`
+}
+
 // SatellitePosition is a lightweight position snapshot for WebSocket broadcasts.
 type SatellitePosition struct {
 	ID        string  `json:"id"`

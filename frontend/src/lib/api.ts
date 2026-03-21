@@ -6,6 +6,7 @@ import type {
   FilterParams,
   SatellitePosition,
   CatalogStatus,
+  FilterFacets,
 } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
@@ -48,6 +49,7 @@ type PassWire = Partial<Pass> & {
 type SatelliteListResponse = {
   count: number;
   catalog_status?: CatalogStatusWire;
+  filter_facets?: FilterFacetsWire;
   satellites: SatelliteWire[];
 };
 
@@ -55,9 +57,15 @@ type CatalogStatusWire = Partial<CatalogStatus> & {
   last_sync_at?: string | null;
 };
 
+type FilterFacetsWire = Partial<FilterFacets> & {
+  countries?: string[];
+  purposes?: string[];
+};
+
 export type SatelliteCatalog = {
   satellites: Satellite[];
   catalogStatus: CatalogStatus | null;
+  filterFacets: FilterFacets | null;
 };
 
 type OrbitResponse = {
@@ -160,6 +168,24 @@ function normalizeCatalogStatus(status?: CatalogStatusWire | null): CatalogStatu
   };
 }
 
+function normalizeFilterFacets(facets?: FilterFacetsWire | null): FilterFacets | null {
+  if (!facets) {
+    return null;
+  }
+
+  const countries = Array.isArray(facets.countries)
+    ? facets.countries.filter((value): value is string => typeof value === 'string' && value !== '')
+    : [];
+  const purposes = Array.isArray(facets.purposes)
+    ? facets.purposes.filter((value): value is string => typeof value === 'string' && value !== '')
+    : [];
+
+  return {
+    countries,
+    purposes,
+  };
+}
+
 export async function fetchSatelliteCatalog(filters?: FilterParams): Promise<SatelliteCatalog> {
   const params = new URLSearchParams();
 
@@ -173,12 +199,14 @@ export async function fetchSatelliteCatalog(filters?: FilterParams): Promise<Sat
   const data = await request<SatelliteListResponse | SatelliteWire[]>(path);
   const satellites = Array.isArray(data) ? data : data.satellites;
   const catalogStatus = Array.isArray(data) ? null : normalizeCatalogStatus(data.catalog_status);
+  const filterFacets = Array.isArray(data) ? null : normalizeFilterFacets(data.filter_facets);
 
   return {
     satellites: satellites
       .map(normalizeSatellite)
       .filter((satellite): satellite is Satellite => satellite !== null),
     catalogStatus,
+    filterFacets,
   };
 }
 

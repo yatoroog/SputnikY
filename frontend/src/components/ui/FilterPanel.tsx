@@ -25,25 +25,75 @@ const COUNTRY_LABELS: Record<string, string> = {
   Unknown: '\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E',
 };
 
+const PURPOSE_LABELS: Record<string, string> = {
+  Communications: '\u0421\u0432\u044f\u0437\u044c',
+  Navigation: '\u041d\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044f',
+  Weather: '\u041f\u043e\u0433\u043e\u0434\u0430',
+  'Space Station': '\u041a\u043e\u0441\u043c\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0441\u0442\u0430\u043d\u0446\u0438\u044f',
+  Science: '\u041d\u0430\u0443\u043a\u0430',
+  'Amateur Radio': '\u041b\u044e\u0431\u0438\u0442\u0435\u043b\u044c\u0441\u043a\u0430\u044f \u0440\u0430\u0434\u0438\u043e\u0441\u0432\u044f\u0437\u044c',
+  Military: '\u0412\u043e\u0435\u043d\u043d\u044b\u0435',
+  Other: '\u0414\u0440\u0443\u0433\u043e\u0435',
+};
+
+function buildSelectOptions(
+  values: string[],
+  selectedValue: string,
+  allLabel: string,
+  labels?: Record<string, string>
+) {
+  const uniqueValues = new Set(values.filter(Boolean));
+  if (selectedValue) {
+    uniqueValues.add(selectedValue);
+  }
+
+  const sortedValues = Array.from(uniqueValues).sort((left, right) =>
+    (labels?.[left] ?? left).localeCompare(labels?.[right] ?? right, 'ru')
+  );
+
+  return [
+    { value: '', label: allLabel },
+    ...sortedValues.map((value) => ({
+      value,
+      label: labels?.[value] ?? value,
+    })),
+  ];
+}
+
 export default function FilterPanel() {
-  const { orbitType, country, setOrbitType, setCountry, resetFilters } =
+  const { orbitType, country, purpose, setOrbitType, setCountry, setPurpose, resetFilters } =
     useFilterStore();
+  const filterFacets = useSatelliteStore((state) => state.filterFacets);
   const satellites = useSatelliteStore((state) => state.satellites);
 
-  const hasActiveFilters = orbitType || country;
+  const hasActiveFilters = orbitType || country || purpose;
   const countryOptions = useMemo(() => {
-    const countries = Array.from(
-      new Set(satellites.map((satellite) => satellite.country).filter(Boolean))
-    ).sort((left, right) => left.localeCompare(right, 'ru'));
+    const countryValues =
+      filterFacets?.countries && filterFacets.countries.length > 0
+        ? filterFacets.countries
+        : satellites.map((satellite) => satellite.country);
 
-    return [
-      { value: '', label: '\u0412\u0441\u0435 \u0441\u0442\u0440\u0430\u043D\u044B' },
-      ...countries.map((value) => ({
-        value,
-        label: COUNTRY_LABELS[value] ?? value,
-      })),
-    ];
-  }, [satellites]);
+    return buildSelectOptions(
+      countryValues,
+      country,
+      '\u0412\u0441\u0435 \u0441\u0442\u0440\u0430\u043d\u044b',
+      COUNTRY_LABELS
+    );
+  }, [country, filterFacets, satellites]);
+
+  const purposeOptions = useMemo(() => {
+    const purposeValues =
+      filterFacets?.purposes && filterFacets.purposes.length > 0
+        ? filterFacets.purposes
+        : satellites.map((satellite) => satellite.purpose);
+
+    return buildSelectOptions(
+      purposeValues,
+      purpose,
+      '\u0412\u0441\u0435 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u044f',
+      PURPOSE_LABELS
+    );
+  }, [purpose, filterFacets, satellites]);
 
   const handleResetFilters = useCallback(() => {
     resetFilters();
@@ -94,6 +144,32 @@ export default function FilterPanel() {
             {countryOptions.map((c) => (
               <option key={c.value} value={c.value} className="bg-[#0d1120]">
                 {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Purpose dropdown */}
+      <div>
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#637196]">
+          {'Назначение'}
+        </p>
+        <div className="premium-field rounded-2xl">
+          <select
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            className="w-full cursor-pointer appearance-none rounded-2xl bg-transparent py-3 pl-4 pr-11 text-[14px] text-[#eef2ff] focus:outline-none"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23637196' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+              backgroundPosition: 'right 14px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: '18px',
+            }}
+          >
+            {purposeOptions.map((option) => (
+              <option key={option.value} value={option.value} className="bg-[#0d1120]">
+                {option.label}
               </option>
             ))}
           </select>

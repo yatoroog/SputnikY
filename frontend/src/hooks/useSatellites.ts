@@ -9,6 +9,7 @@ import type { FilterParams } from '@/types';
 export function useSatellites() {
   const setSatellites = useSatelliteStore((state) => state.setSatellites);
   const setCatalogStatus = useSatelliteStore((state) => state.setCatalogStatus);
+  const setFilterFacets = useSatelliteStore((state) => state.setFilterFacets);
   const setLoading = useSatelliteStore((state) => state.setLoading);
   const setError = useSatelliteStore((state) => state.setError);
   const { country, orbitType, purpose, search } = useFilterStore();
@@ -27,6 +28,7 @@ export function useSatellites() {
       const data = await fetchSatelliteCatalog(filters);
       setSatellites(data.satellites);
       setCatalogStatus(data.catalogStatus);
+      setFilterFacets(data.filterFacets);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u0441\u043F\u0443\u0442\u043D\u0438\u043A\u043E\u0432';
@@ -34,7 +36,17 @@ export function useSatellites() {
     } finally {
       setLoading(false);
     }
-  }, [country, orbitType, purpose, search, setSatellites, setCatalogStatus, setLoading, setError]);
+  }, [
+    country,
+    orbitType,
+    purpose,
+    search,
+    setSatellites,
+    setCatalogStatus,
+    setFilterFacets,
+    setLoading,
+    setError,
+  ]);
 
   useEffect(() => {
     load();

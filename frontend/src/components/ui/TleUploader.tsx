@@ -16,6 +16,7 @@ export default function TleUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setSatellites = useSatelliteStore((state) => state.setSatellites);
   const setCatalogStatus = useSatelliteStore((state) => state.setCatalogStatus);
+  const setFilterFacets = useSatelliteStore((state) => state.setFilterFacets);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +54,7 @@ export default function TleUploader() {
         const catalog = await uploadTLE(file);
         setSatellites(catalog.satellites);
         setCatalogStatus(catalog.catalogStatus);
+        setFilterFacets(catalog.filterFacets);
         setSuccess(`Загружено ${catalog.satellites.length} спутников`);
       } catch (err) {
         const message =
@@ -64,7 +66,7 @@ export default function TleUploader() {
         setLoading(false);
       }
     },
-    [setSatellites, setCatalogStatus]
+    [setSatellites, setCatalogStatus, setFilterFacets]
   );
 
   const handleDrop = useCallback(
@@ -111,6 +113,7 @@ export default function TleUploader() {
         const catalog = await loadPreset(name);
         setSatellites(catalog.satellites);
         setCatalogStatus(catalog.catalogStatus);
+        setFilterFacets(catalog.filterFacets);
         setSuccess(`Пресет "${name}" загружен`);
       } catch (err) {
         const message =
@@ -122,7 +125,7 @@ export default function TleUploader() {
         setLoading(false);
       }
     },
-    [setSatellites, setCatalogStatus]
+    [setSatellites, setCatalogStatus, setFilterFacets]
   );
 
   return (
