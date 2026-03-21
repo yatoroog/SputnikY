@@ -33,27 +33,20 @@ func main() {
 	// Initialize satellite service
 	service := satellite.NewService()
 
-	// --- Load satellites: prefer N2YO API, fall back to local TLE file ---
+	// --- Load satellites: try N2YO API first, fall back to local TLE (~500 sats) ---
 	n2yoKey := "97BW46-YA9RMR-F3SALS-5OWE"
-	var n2yoClient *n2yo.Client
+	n2yoClient := n2yo.NewClient(n2yoKey)
 
-	if n2yoKey != "" {
-		log.Info().Msg("N2YO API key found — loading satellites from N2YO in real-time")
-		n2yoClient = n2yo.NewClient(n2yoKey)
-
-		tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
-		if err != nil {
-			log.Warn().Err(err).Msg("N2YO initial fetch failed, falling back to local TLE")
-			loadLocalTLE(service)
-		} else {
-			if err := service.LoadFromTLE(tleData); err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize satellites from N2YO data")
-			}
-			log.Info().Int("satellites", len(tleData)).Msg("Initial satellite data loaded from N2YO")
-		}
-	} else {
-		log.Info().Msg("No N2YO_API_KEY set — using local TLE file")
+	log.Info().Msg("Trying N2YO API for real-time satellite data...")
+	tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
+	if err != nil {
+		log.Warn().Err(err).Msg("N2YO fetch failed (likely rate limit), using local TLE file")
 		loadLocalTLE(service)
+	} else {
+		if err := service.LoadFromTLE(tleData); err != nil {
+			log.Fatal().Err(err).Msg("Failed to initialize satellites from N2YO data")
+		}
+		log.Info().Int("satellites", len(tleData)).Msg("Initial satellite data loaded from N2YO")
 	}
 
 	// Initialize WebSocket hub
@@ -106,34 +99,32 @@ func main() {
 		}
 	}()
 
-	// Start background N2YO refresh worker (every 30 minutes)
-	stopN2YO := make(chan struct{})
-	if n2yoClient != nil {
-		go func() {
-			ticker := time.NewTicker(30 * time.Minute)
-			defer ticker.Stop()
+	// Start background N2YO refresh worker (every 2 hours — within rate limits)
+	stopRefresh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Hour)
+		defer ticker.Stop()
 
-			log.Info().Msg("N2YO refresh worker started (30 min interval)")
+		log.Info().Msg("N2YO refresh worker started (2h interval)")
 
-			for {
-				select {
-				case <-ticker.C:
-					log.Info().Msg("Refreshing satellite data from N2YO...")
-					tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
-					if err != nil {
-						log.Warn().Err(err).Msg("N2YO refresh failed, keeping current data")
-						continue
-					}
-					if err := service.ReplaceFromTLE(tleData); err != nil {
-						log.Warn().Err(err).Msg("Failed to replace satellites after N2YO refresh")
-					}
-				case <-stopN2YO:
-					log.Info().Msg("N2YO refresh worker stopped")
-					return
+		for {
+			select {
+			case <-ticker.C:
+				log.Info().Msg("Refreshing satellite data from N2YO...")
+				freshData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
+				if err != nil {
+					log.Warn().Err(err).Msg("N2YO refresh failed, keeping current data")
+					continue
 				}
+				if err := service.ReplaceFromTLE(freshData); err != nil {
+					log.Warn().Err(err).Msg("Failed to replace satellites after N2YO refresh")
+				}
+			case <-stopRefresh:
+				log.Info().Msg("N2YO refresh worker stopped")
+				return
 			}
-		}()
-	}
+		}
+	}()
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -143,7 +134,7 @@ func main() {
 		<-quit
 		log.Info().Msg("Shutting down server...")
 		close(stopWorker)
-		close(stopN2YO)
+		close(stopRefresh)
 
 		if err := app.ShutdownWithTimeout(5 * time.Second); err != nil {
 			log.Error().Err(err).Msg("Server forced to shutdown")
