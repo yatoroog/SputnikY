@@ -7,6 +7,7 @@ interface SatelliteStore {
   positions: Map<string, SatellitePosition>;
   loading: boolean;
   error: string | null;
+  isCloseUp: boolean;
 
   clickedLocation: { lat: number; lng: number } | null;
   areaPasses: AreaPass[];
@@ -17,6 +18,7 @@ interface SatelliteStore {
   updatePositions: (positions: SatellitePosition[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setCloseUp: (v: boolean) => void;
 
   setClickedLocation: (location: { lat: number; lng: number } | null) => void;
   setAreaPasses: (passes: AreaPass[]) => void;
@@ -29,6 +31,7 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   positions: new Map(),
   loading: false,
   error: null,
+  isCloseUp: false,
 
   clickedLocation: null,
   areaPasses: [],
@@ -37,7 +40,7 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   setSatellites: (satellites: Satellite[]) => set({ satellites }),
 
   selectSatellite: (satellite: Satellite | null) =>
-    set({ selectedSatellite: satellite, clickedLocation: null, areaPasses: [] }),
+    set({ selectedSatellite: satellite, clickedLocation: null, areaPasses: [], isCloseUp: false }),
 
   updatePositions: (positions: SatellitePosition[]) =>
     set((state) => {
@@ -51,6 +54,8 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   setLoading: (loading: boolean) => set({ loading }),
 
   setError: (error: string | null) => set({ error }),
+
+  setCloseUp: (v: boolean) => set({ isCloseUp: v }),
 
   setClickedLocation: (location) =>
     set({ clickedLocation: location, selectedSatellite: null }),

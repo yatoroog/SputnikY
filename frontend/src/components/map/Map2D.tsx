@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import dynamic from 'next/dynamic';
 import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
+
+const SatelliteModel3D = dynamic(() => import('./SatelliteModel3D'), {
+  ssr: false,
+});
 
 const EARTH_RADIUS_KM = 6_371;
 
@@ -108,14 +113,19 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   const satellitesRef = useRef<Satellite[]>(satellites);
   const prevSelectedIdRef = useRef<string | null>(null);
 
+  const prevMapStateRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+
   const [mapReady, setMapReady] = useState(false);
 
   const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
   const selectedSatRef = useRef<Satellite | null>(selectedSatellite);
+  const isCloseUpRef = useRef(false);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
+  const isCloseUp = useSatelliteStore((state) => state.isCloseUp);
   satellitesRef.current = satellites;
   selectedSatRef.current = selectedSatellite;
+  isCloseUpRef.current = isCloseUp;
 
   /* ── load 2GIS script ──────────────────────────────────── */
 
@@ -222,6 +232,11 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
           const p = positions.get(sel.id);
           if (p) coverageCircleRef.current.setLatLng([p.lat, p.lng]);
         }
+        // Follow selected satellite in close-up mode
+        if (isCloseUpRef.current && sel && map) {
+          const p = positions.get(sel.id);
+          if (p) map.panTo([p.lat, p.lng], { animate: false });
+        }
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -292,6 +307,56 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       }
     }
   }, [satellites, selectedSatellite, selectSatellite, mapReady]);
+
+  /* ── close-up mode: zoom, hide markers, save/restore state ── */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (isCloseUp && selectedSatellite) {
+      // Save current map state (only on first entry)
+      if (!prevMapStateRef.current) {
+        const c = map.getCenter();
+        prevMapStateRef.current = {
+          center: [c.lat, c.lng],
+          zoom: map.getZoom(),
+        };
+      }
+
+      // Hide all markers
+      markersRef.current.forEach((marker: DGMarker) => {
+        const el =
+          (marker as { _icon?: HTMLElement })._icon ??
+          (marker as { getElement?: () => HTMLElement | null }).getElement?.();
+        if (el) el.style.display = 'none';
+      });
+
+      // Zoom close to satellite
+      const pos = positionsRef.current.get(selectedSatellite.id);
+      if (pos) {
+        map.setView([pos.lat, pos.lng], 5, { animate: true, duration: 1.5 });
+      }
+    } else {
+      // Show all markers
+      markersRef.current.forEach((marker: DGMarker) => {
+        const el =
+          (marker as { _icon?: HTMLElement })._icon ??
+          (marker as { getElement?: () => HTMLElement | null }).getElement?.();
+        if (el) el.style.display = '';
+      });
+
+      // Restore previous map state
+      if (prevMapStateRef.current) {
+        map.setView(
+          prevMapStateRef.current.center,
+          prevMapStateRef.current.zoom,
+          { animate: true, duration: 1.5 }
+        );
+        prevMapStateRef.current = null;
+      }
+    }
+  }, [isCloseUp, selectedSatellite, mapReady]);
 
   /* ── coverage zone ───────────────────────────────────────── */
 
@@ -428,6 +493,11 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   return (
     <div className="relative w-full h-full" style={{ background: '#0a1628' }}>
       <div ref={containerRef} className="absolute inset-0" />
+      {isCloseUp && selectedSatellite && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+          <SatelliteModel3D />
+        </div>
+      )}
     </div>
   );
 }
