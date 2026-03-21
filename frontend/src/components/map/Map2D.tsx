@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { Satellite } from '@/types';
+import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
@@ -110,10 +110,12 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
   const [mapReady, setMapReady] = useState(false);
 
-  const positions = useSatelliteStore((state) => state.positions);
+  const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
+  const selectedSatRef = useRef<Satellite | null>(selectedSatellite);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   satellitesRef.current = satellites;
+  selectedSatRef.current = selectedSatellite;
 
   /* ── load 2GIS script ──────────────────────────────────── */
 
@@ -187,6 +189,47 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     };
   }, [loadDGScript, setClickedLocation]);
 
+  /* ── subscribe to positions without re-renders ────────── */
+
+  useEffect(() => {
+    positionsRef.current = useSatelliteStore.getState().positions;
+    const unsub = useSatelliteStore.subscribe((state) => {
+      positionsRef.current = state.positions;
+    });
+    return unsub;
+  }, []);
+
+  /* ── RAF position update loop (decoupled from React) ─── */
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    let rafId: number;
+    let lastMs = 0;
+
+    const tick = () => {
+      const now = performance.now();
+      if (now - lastMs >= 50) {
+        lastMs = now;
+        const positions = positionsRef.current;
+        markersRef.current.forEach((marker, id) => {
+          const p = positions.get(id);
+          if (p) marker.setLatLng([p.lat, p.lng]);
+        });
+        const sel = selectedSatRef.current;
+        if (coverageCircleRef.current && sel) {
+          const p = positions.get(sel.id);
+          if (p) coverageCircleRef.current.setLatLng([p.lat, p.lng]);
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [mapReady]);
+
   /* ── update markers ────────────────────────────────────── */
 
   useEffect(() => {
@@ -212,6 +255,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     if (prevSelId && prevSelId !== selId) needsIconRefresh.add(prevSelId);
     if (selId && selId !== prevSelId) needsIconRefresh.add(selId);
 
+    const positions = positionsRef.current;
     for (const sat of satellites) {
       const pos = positions.get(sat.id);
       const lat = pos?.lat ?? sat.latitude;
@@ -225,9 +269,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       const existing = markersRef.current.get(sat.id);
 
       if (existing) {
-        existing.setLatLng([lat, lng]);
-        applyMarkerTransition(existing);
-        // Refresh icon if selection state changed
+        // Only refresh icon if selection state changed for this marker
         if (needsIconRefresh.has(sat.id)) {
           existing.setIcon(makeDotIcon(DG, color, isSelected));
           applyMarkerTransition(existing);
@@ -249,7 +291,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         markersRef.current.set(sat.id, marker);
       }
     }
-  }, [satellites, positions, selectedSatellite, selectSatellite, mapReady]);
+  }, [satellites, selectedSatellite, selectSatellite, mapReady]);
 
   /* ── coverage zone ───────────────────────────────────────── */
 
@@ -265,7 +307,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
     if (!selectedSatellite) return;
 
-    const pos = positions.get(selectedSatellite.id);
+    const pos = positionsRef.current.get(selectedSatellite.id);
     const lat = pos?.lat ?? selectedSatellite.latitude;
     const lng = pos?.lng ?? selectedSatellite.longitude;
     const altKm = pos?.alt ?? selectedSatellite.altitude;
@@ -284,7 +326,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       fillColor: color,
       fillOpacity: 0.08,
     }).addTo(map);
-  }, [selectedSatellite, positions, mapReady]);
+  }, [selectedSatellite, mapReady]);
 
   /* ── clicked location marker ──────────────────────────── */
 

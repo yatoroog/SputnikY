@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { Satellite } from '@/types';
+import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
@@ -149,7 +149,7 @@ export default function CesiumGlobe({
   );
   const [viewerError, setViewerError] = useState<string | null>(null);
 
-  const positions = useSatelliteStore((state) => state.positions);
+  const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const setClickedLocation = useSatelliteStore((state) => state.setClickedLocation);
   satellitesRef.current = satellites;
@@ -426,6 +426,40 @@ export default function CesiumGlobe({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ── subscribe to positions without re-renders ────────── */
+
+  useEffect(() => {
+    positionsRef.current = useSatelliteStore.getState().positions;
+    const unsub = useSatelliteStore.subscribe((state, prev) => {
+      positionsRef.current = state.positions;
+      if (state.positions === prev.positions) return;
+
+      const nowMs = performance.now();
+      const elapsed = lastSnapshotAtRef.current ? nowMs - lastSnapshotAtRef.current : 0;
+      const motionDur = Math.max(120, Math.min(elapsed || 0, 2200));
+      let fresh = false;
+
+      state.positions.forEach((pos, id) => {
+        if (!hasRenderableCoordinates(pos.lat, pos.lng, pos.alt)) return;
+        const target: RenderPosition = { lat: pos.lat, lng: pos.lng, altKm: pos.alt };
+        const existing = pointMotionRef.current.get(id);
+        const current = existing ? getMotionPosition(existing, nowMs) : target;
+        if (!existing || !isSameRenderPosition(existing.to, target)) {
+          pointMotionRef.current.set(id, {
+            from: current,
+            to: target,
+            startedAtMs: nowMs,
+            durationMs: existing ? motionDur : 0,
+          });
+          fresh = true;
+        }
+      });
+
+      if (fresh) lastSnapshotAtRef.current = nowMs;
+    });
+    return unsub;
+  }, []);
+
   /* ── smooth point animation ───────────────────────────── */
 
   useEffect(() => {
@@ -562,11 +596,22 @@ export default function CesiumGlobe({
     });
 
     const nowMs = performance.now();
-    const elapsedSinceSnapshot = lastSnapshotAtRef.current
-      ? nowMs - lastSnapshotAtRef.current
-      : 0;
-    const motionDurationMs = Math.max(120, Math.min(elapsedSinceSnapshot || 0, 2200));
-    let receivedFreshSnapshot = false;
+    const positions = positionsRef.current;
+
+    // Shared NearFarScalar instances (avoid allocating per satellite)
+    const sharedScale = new Cesium.NearFarScalar(2.0e6, 1.4, 4.2e7, 0.6);
+    const sharedTranslucency = new Cesium.NearFarScalar(2.0e6, 1.0, 4.2e7, 0.8);
+
+    // Pre-parse orbit colors once
+    const colorCache = new Map<string, InstanceType<typeof Cesium.Color>>();
+    const getColor = (orbitType: string) => {
+      let c = colorCache.get(orbitType);
+      if (!c) {
+        c = Cesium.Color.fromCssColorString(getOrbitPointColor(orbitType));
+        colorCache.set(orbitType, c);
+      }
+      return c;
+    };
 
     // Add / update
     for (const sat of satellites) {
@@ -585,71 +630,48 @@ export default function CesiumGlobe({
         continue;
       }
 
-      const targetPosition: RenderPosition = { lat, lng, altKm };
       const isSelected = selectedSatellite?.id === sat.id;
-      const baseColor = getOrbitPointColor(sat.orbitType);
-      const pointColor = Cesium.Color.fromCssColorString(baseColor).withAlpha(
-        isSelected ? 1.0 : 0.85
-      );
-
+      const baseColor = getColor(sat.orbitType);
+      const pointColor = baseColor.withAlpha(isSelected ? 1.0 : 0.85);
       const pixelSize = isSelected ? 9 : 6;
       const outlineWidth = isSelected ? 2 : 0.5;
       const outlineColor = isSelected
         ? Cesium.Color.WHITE.withAlpha(0.95)
-        : Cesium.Color.fromCssColorString(baseColor).withAlpha(0.4);
+        : baseColor.withAlpha(0.4);
 
       const existingPoint = pointMapRef.current.get(sat.id);
-      const existingMotion = pointMotionRef.current.get(sat.id);
-      const currentMotionPosition = existingMotion
-        ? getMotionPosition(existingMotion, nowMs)
-        : targetPosition;
-      const hasTargetChanged = !existingMotion || !isSameRenderPosition(existingMotion.to, targetPosition);
-
-      if (hasTargetChanged) {
-        pointMotionRef.current.set(sat.id, {
-          from: currentMotionPosition,
-          to: targetPosition,
-          startedAtMs: nowMs,
-          durationMs: existingMotion ? motionDurationMs : 0,
-        });
-        receivedFreshSnapshot = true;
-      }
 
       if (existingPoint) {
         existingPoint.pixelSize = pixelSize;
         existingPoint.color = pointColor;
         existingPoint.outlineWidth = outlineWidth;
         existingPoint.outlineColor = outlineColor;
-        existingPoint.disableDepthTestDistance = 0;
-        existingPoint.scaleByDistance = new Cesium.NearFarScalar(
-          2.0e6, 1.4, 4.2e7, 0.6
-        );
-        existingPoint.translucencyByDistance = new Cesium.NearFarScalar(
-          2.0e6, 1.0, 4.2e7, 0.8
-        );
         existingPoint.show = true;
       } else {
+        const initPos = { lat, lng, altKm };
         const point = pointCollection.add({
           id: sat.id,
-          position: Cesium.Cartesian3.fromDegrees(
-            currentMotionPosition.lng,
-            currentMotionPosition.lat,
-            currentMotionPosition.altKm * 1000
-          ),
+          position: Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
           pixelSize,
           color: pointColor,
           outlineColor,
           outlineWidth,
           disableDepthTestDistance: 0,
-          scaleByDistance: new Cesium.NearFarScalar(2.0e6, 1.4, 4.2e7, 0.6),
-          translucencyByDistance: new Cesium.NearFarScalar(2.0e6, 1.0, 4.2e7, 0.8),
+          scaleByDistance: sharedScale,
+          translucencyByDistance: sharedTranslucency,
         });
         pointMapRef.current.set(sat.id, point);
-      }
-    }
 
-    if (receivedFreshSnapshot) {
-      lastSnapshotAtRef.current = nowMs;
+        // Ensure initial motion state exists
+        if (!pointMotionRef.current.has(sat.id)) {
+          pointMotionRef.current.set(sat.id, {
+            from: initPos,
+            to: initPos,
+            startedAtMs: nowMs,
+            durationMs: 0,
+          });
+        }
+      }
     }
 
     // Selected label
@@ -684,7 +706,7 @@ export default function CesiumGlobe({
     }
 
     viewer.scene.requestRender();
-  }, [satellites, positions, selectedSatellite, viewerState]);
+  }, [satellites, selectedSatellite, viewerState]);
 
   /* ── coverage zone (footprint) ─────────────────────────── */
 
@@ -700,7 +722,7 @@ export default function CesiumGlobe({
 
     if (!selectedSatellite) return;
 
-    const pos = positions.get(selectedSatellite.id);
+    const pos = positionsRef.current.get(selectedSatellite.id);
     const lat = pos?.lat ?? selectedSatellite.latitude;
     const lng = pos?.lng ?? selectedSatellite.longitude;
     const altKm = pos?.alt ?? selectedSatellite.altitude;
@@ -728,7 +750,7 @@ export default function CesiumGlobe({
     });
 
     viewer.scene.requestRender();
-  }, [selectedSatellite, positions, viewerState]);
+  }, [selectedSatellite, viewerState]);
 
   /* ── clicked location marker ─────────────────────────── */
 

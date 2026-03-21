@@ -93,6 +93,68 @@ func (s *SatelliteService) LoadFromTLE(tleData []models.TLEData) error {
 	return nil
 }
 
+// ReplaceFromTLE atomically replaces all satellites with freshly parsed TLE data.
+// Unlike LoadFromTLE this doesn't accumulate — it swaps the whole map at once.
+func (s *SatelliteService) ReplaceFromTLE(tleData []models.TLEData) error {
+	now := time.Now().UTC()
+	newMap := make(map[string]*models.Satellite)
+	loaded := 0
+
+	for _, td := range tleData {
+		noradID, err := tle.ExtractNoradID(td.Line1)
+		if err != nil {
+			continue
+		}
+
+		intlDesig := tle.ExtractIntlDesignator(td.Line1)
+		periodMinutes, inclination, eccentricity := ExtractOrbitalParams(td)
+		orbitType := DetermineOrbitType(periodMinutes, eccentricity)
+		country := DetermineCountry(intlDesig)
+		purpose := determinePurpose(td.Name)
+
+		epoch := ""
+		if len(td.Line1) >= 32 {
+			epoch = strings.TrimSpace(td.Line1[18:32])
+		}
+
+		sat := &models.Satellite{
+			ID:          uuid.New().String(),
+			Name:        td.Name,
+			NoradID:     noradID,
+			Country:     country,
+			OrbitType:   orbitType,
+			Purpose:     purpose,
+			Period:      periodMinutes,
+			Inclination: inclination,
+			Epoch:       epoch,
+			TLE:         td,
+		}
+
+		lat, lng, alt, err := Propagate(td, now)
+		if err != nil {
+			continue
+		}
+		sat.Latitude = lat
+		sat.Longitude = lng
+		sat.Altitude = alt
+
+		vel, err := CalculateVelocity(td, now)
+		if err == nil {
+			sat.Velocity = vel
+		}
+
+		newMap[sat.ID] = sat
+		loaded++
+	}
+
+	s.mu.Lock()
+	s.satellites = newMap
+	s.mu.Unlock()
+
+	log.Info().Int("count", loaded).Msg("Satellites replaced from TLE data")
+	return nil
+}
+
 // GetAll returns all satellites matching the given filters.
 func (s *SatelliteService) GetAll(filters models.FilterParams) []*models.Satellite {
 	s.mu.RLock()

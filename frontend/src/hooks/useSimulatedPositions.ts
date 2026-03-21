@@ -5,7 +5,7 @@ import { fetchPositionsAtTime } from '@/lib/api';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
 
-const SIMULATION_POLL_INTERVAL_MS = 120;
+const SIMULATION_POLL_INTERVAL_MS = 500;
 
 export function useSimulatedPositions() {
   const isRealTime = useTimeStore((state) => state.isRealTime);
