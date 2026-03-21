@@ -610,7 +610,8 @@ export default function CesiumGlobe({
 
     (async () => {
       try {
-        const orbitData = await fetchOrbit(sat.id, 2);
+        // Fetch full orbit period (~3 hours for LEO, enough for one revolution)
+        const orbitData = await fetchOrbit(sat.id, 3);
         if (cancelled || !viewerRef.current || viewerRef.current.isDestroyed()) return;
 
         if (!orbitData || orbitData.length < 2) return;
@@ -621,14 +622,14 @@ export default function CesiumGlobe({
 
         const orbitColor = Cesium.Color.fromCssColorString(
           getOrbitPointColor(sat.orbitType)
-        ).withAlpha(0.6);
+        ).withAlpha(0.85);
 
         orbitEntityRef.current = viewer.entities.add({
           polyline: {
             positions: orbitPositions,
-            width: 2,
+            width: 3,
             material: new Cesium.PolylineGlowMaterialProperty({
-              glowPower: 0.2,
+              glowPower: 0.3,
               color: orbitColor,
             }),
             clampToGround: false,
