@@ -137,6 +137,12 @@ export default function CesiumGlobe({
   const animationFrameRef = useRef<number | null>(null);
   const renderIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSnapshotAtRef = useRef<number | null>(null);
+  const modelEntityRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const prevCameraRef = useRef<{
+    position: InstanceType<typeof import('cesium').Cartesian3>;
+    direction: InstanceType<typeof import('cesium').Cartesian3>;
+    up: InstanceType<typeof import('cesium').Cartesian3>;
+  } | null>(null);
 
   /* rotation state */
   const isUserInteractingRef = useRef(false);
@@ -415,6 +421,8 @@ export default function CesiumGlobe({
       lastSnapshotAtRef.current = null;
       pointCollectionRef.current = null;
       selectedLabelEntityRef.current = null;
+      modelEntityRef.current = null;
+      prevCameraRef.current = null;
       coverageEntityRef.current = null;
       clickedLocationEntityRef.current = null;
 
@@ -518,6 +526,7 @@ export default function CesiumGlobe({
               activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
             );
         }
+
       }
 
       /* ── Clock sync + smooth camera rotation ── */
@@ -541,7 +550,7 @@ export default function CesiumGlobe({
       const dtSec = Math.min((nowMs - lastFrameMsRef.current) / 1000, 0.05);
       lastFrameMsRef.current = nowMs;
 
-      if (timeState.isPlaying && !isUserInteractingRef.current && dtSec > 0) {
+      if (timeState.isPlaying && !isUserInteractingRef.current && !isCloseUpRef.current && dtSec > 0) {
         const EARTH_DEG_PER_SEC = 360 / 86400;
         const MAX_DEG_PER_SEC = 2;
         const deg = Math.min(EARTH_DEG_PER_SEC * timeState.speed, MAX_DEG_PER_SEC);
@@ -741,11 +750,11 @@ export default function CesiumGlobe({
       ellipse: {
         semiMajorAxis: groundRadiusMeters,
         semiMinorAxis: groundRadiusMeters,
-        material: color.withAlpha(0.08),
+        material: color.withAlpha(0.12),
         outline: true,
-        outlineColor: color.withAlpha(0.4),
-        outlineWidth: 1.5,
-        height: 0,
+        outlineColor: color.withAlpha(0.6),
+        outlineWidth: 2,
+        height: 500,
       },
     });
 
@@ -869,11 +878,8 @@ export default function CesiumGlobe({
         orbitEntityRef.current = viewer.entities.add({
           polyline: {
             positions: orbitPositions,
-            width: 3,
-            material: new Cesium.PolylineGlowMaterialProperty({
-              glowPower: 0.3,
-              color: orbitColor,
-            }),
+            width: 2,
+            material: new Cesium.ColorMaterialProperty(orbitColor),
             clampToGround: false,
           },
         });
@@ -886,6 +892,144 @@ export default function CesiumGlobe({
 
     return () => { cancelled = true; };
   }, [selectedSatellite, viewerState]);
+
+  /* ── 3D model close-up mode (controlled by isCloseUp toggle) ── */
+
+  const isCloseUpRef = useRef(false);
+  const closeUpRangeRef = useRef(40000);
+
+  useEffect(() => {
+    const unsub = useSatelliteStore.subscribe((state, prev) => {
+      if (state.isCloseUp === prev.isCloseUp && state.selectedSatellite === prev.selectedSatellite) return;
+
+      const viewer = viewerRef.current;
+      const Cesium = cesiumRef.current;
+      if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+      const wantCloseUp = state.isCloseUp && !!state.selectedSatellite;
+      const wasCloseUp = isCloseUpRef.current;
+      isCloseUpRef.current = wantCloseUp;
+
+      /* ── EXIT close-up ── */
+      if (wasCloseUp && !wantCloseUp) {
+        // Remove model
+        if (modelEntityRef.current) {
+          viewer.trackedEntity = undefined;
+          viewer.entities.remove(modelEntityRef.current);
+          modelEntityRef.current = null;
+        }
+
+        // Show all points
+        pointMapRef.current.forEach((point) => { point.show = true; });
+
+        // Restore depth test and camera
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 7_500_000;
+        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
+        if (prevCameraRef.current) {
+          viewer.camera.flyTo({
+            destination: prevCameraRef.current.position,
+            orientation: {
+              direction: prevCameraRef.current.direction,
+              up: prevCameraRef.current.up,
+            },
+            duration: 1.5,
+          });
+          prevCameraRef.current = null;
+        }
+
+        viewer.scene.requestRender();
+        return;
+      }
+
+      /* ── ENTER close-up ── */
+      if (wantCloseUp && !wasCloseUp) {
+        const sat = state.selectedSatellite!;
+        const pos = positionsRef.current.get(sat.id);
+        const lat = pos?.lat ?? sat.latitude;
+        const lng = pos?.lng ?? sat.longitude;
+        const altKm = pos?.alt ?? sat.altitude;
+
+        if (!hasRenderableCoordinates(lat, lng, altKm)) return;
+
+        // Save camera state
+        prevCameraRef.current = {
+          position: viewer.camera.position.clone(),
+          direction: viewer.camera.direction.clone(),
+          up: viewer.camera.up.clone(),
+        };
+
+        // Allow close zoom, disable terrain depth test so coverage zone is visible
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 100;
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+
+        // Hide all points
+        pointMapRef.current.forEach((point) => { point.show = false; });
+
+        // Create model with CallbackProperty position for smooth tracking
+        const satId = sat.id;
+        const modelScale = altKm < 2000 ? 2500 : altKm < 20000 ? 7500 : 20000;
+        const flyRange = altKm < 2000 ? 4_000_000 : altKm < 20000 ? 8_000_000 : 15_000_000;
+        closeUpRangeRef.current = flyRange;
+
+        const positionCb = new Cesium.CallbackProperty(() => {
+          const motion = pointMotionRef.current.get(satId);
+          if (motion) {
+            const p = getMotionPosition(motion, performance.now());
+            return Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altKm * 1000);
+          }
+          return Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
+        }, false);
+
+        const orientCb = new Cesium.CallbackProperty(() => {
+          const t = performance.now() / 1000;
+          const heading = Cesium.Math.toRadians((t * 5) % 360);
+          const motion = pointMotionRef.current.get(satId);
+          const p = motion ? getMotionPosition(motion, performance.now()) : { lat, lng, altKm };
+          const c = Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altKm * 1000);
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            c,
+            new Cesium.HeadingPitchRoll(heading, 0, 0)
+          );
+        }, false);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        modelEntityRef.current = viewer.entities.add({
+          position: positionCb as any,
+          orientation: orientCb as any,
+          model: {
+            uri: '/satellite.glb',
+            scale: modelScale,
+            minimumPixelSize: 64,
+            maximumScale: 200000,
+          },
+        });
+
+        // Fly to satellite, then start tracking
+        const destination = Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
+        viewer.camera.flyToBoundingSphere(
+          new Cesium.BoundingSphere(destination, 1),
+          {
+            offset: new Cesium.HeadingPitchRange(
+              Cesium.Math.toRadians(0),
+              Cesium.Math.toRadians(-80),
+              flyRange
+            ),
+            duration: 1.5,
+            complete: () => {
+              if (viewerRef.current && !viewerRef.current.isDestroyed() && modelEntityRef.current) {
+                viewerRef.current.trackedEntity = modelEntityRef.current;
+              }
+            },
+          }
+        );
+
+        viewer.scene.requestRender();
+      }
+    });
+    return unsub;
+  }, []);
 
   /* ── render ─────────────────────────────────────────────── */
 

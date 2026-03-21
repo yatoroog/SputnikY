@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { X, Globe, MapPin, Gauge, Clock, Compass, Navigation } from 'lucide-react';
+import { X, Globe, MapPin, Gauge, Clock, Compass, Navigation, Crosshair } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import {
   formatCoordinate,
@@ -14,6 +14,8 @@ import {
 export default function SatelliteCard() {
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
+  const isCloseUp = useSatelliteStore((state) => state.isCloseUp);
+  const setCloseUp = useSatelliteStore((state) => state.setCloseUp);
 
   const handleClose = useCallback(() => {
     selectSatellite(null);
@@ -132,17 +134,49 @@ export default function SatelliteCard() {
       {/* Glass divider */}
       <div className="mx-5 h-px glass-divider-h" />
 
-      {/* Orbit indicator */}
+      {/* Close-up toggle */}
       <div className="p-5">
-        <div className="flex items-center gap-2.5 py-2.5 px-4 rounded-2xl bg-accent-cyan/5 border border-accent-cyan/15">
-          <div
-            className="w-2 h-2 rounded-full animate-pulse-glow"
-            style={{ backgroundColor: '#06b6d4' }}
-          />
-          <span className="text-xs text-accent-cyan/80">
-            {'\u041E\u0440\u0431\u0438\u0442\u0430 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0435\u0442\u0441\u044F \u043D\u0430 \u0433\u043B\u043E\u0431\u0443\u0441\u0435'}
-          </span>
-        </div>
+        <button
+          onClick={() => setCloseUp(!isCloseUp)}
+          className={`flex w-full items-center gap-3 py-3 px-4 rounded-2xl transition-all duration-300 ${
+            isCloseUp
+              ? 'bg-accent-cyan/15 border border-accent-cyan/30'
+              : 'bg-white/5 border border-white/10 hover:bg-white/[0.08]'
+          }`}
+        >
+          {/* Toggle track */}
+          <div className="relative w-10 h-5 flex-shrink-0">
+            <div
+              className={`absolute inset-0 rounded-full transition-colors duration-300 ${
+                isCloseUp
+                  ? 'bg-accent-cyan/25 border border-accent-cyan/40'
+                  : 'bg-white/10 border border-white/15'
+              }`}
+            />
+            <div
+              className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-300 shadow-md ${
+                isCloseUp
+                  ? 'left-[22px] bg-accent-cyan shadow-accent-cyan/40'
+                  : 'left-0.5 bg-[#637196]'
+              }`}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Crosshair
+              size={14}
+              className={isCloseUp ? 'text-accent-cyan' : 'text-[#637196]'}
+            />
+            <span
+              className={`text-xs font-medium uppercase tracking-wider ${
+                isCloseUp ? 'text-accent-cyan' : 'text-[#94a3c0]'
+              }`}
+            >
+              {isCloseUp
+                ? '\u041E\u0442\u0434\u0430\u043B\u0438\u0442\u044C'
+                : '\u041F\u0440\u0438\u0431\u043B\u0438\u0437\u0438\u0442\u044C'}
+            </span>
+          </div>
+        </button>
       </div>
     </div>
   );
