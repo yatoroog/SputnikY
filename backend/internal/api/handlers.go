@@ -58,6 +58,7 @@ func (h *Handlers) GetSatellites(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"count":          len(satellites),
 		"catalog_status": h.service.GetCatalogStatus(),
+		"filter_facets":  h.service.GetFilterFacets(),
 		"satellites":     satellites,
 	})
 }

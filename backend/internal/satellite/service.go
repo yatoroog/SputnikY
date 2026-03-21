@@ -2,6 +2,7 @@ package satellite
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -178,6 +179,41 @@ func (s *SatelliteService) GetAll(filters models.FilterParams) []*models.Satelli
 		result = append(result, sat)
 	}
 	return result
+}
+
+// GetFilterFacets returns unique filter values for the whole in-memory catalog.
+func (s *SatelliteService) GetFilterFacets() models.FilterFacets {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	countries := make(map[string]struct{})
+	purposes := make(map[string]struct{})
+
+	for _, sat := range s.satellites {
+		if sat.Country != "" {
+			countries[sat.Country] = struct{}{}
+		}
+		if sat.Purpose != "" {
+			purposes[sat.Purpose] = struct{}{}
+		}
+	}
+
+	countryList := make([]string, 0, len(countries))
+	for value := range countries {
+		countryList = append(countryList, value)
+	}
+	slices.Sort(countryList)
+
+	purposeList := make([]string, 0, len(purposes))
+	for value := range purposes {
+		purposeList = append(purposeList, value)
+	}
+	slices.Sort(purposeList)
+
+	return models.FilterFacets{
+		Countries: countryList,
+		Purposes:  purposeList,
+	}
 }
 
 // GetByID returns a single satellite by its UUID.

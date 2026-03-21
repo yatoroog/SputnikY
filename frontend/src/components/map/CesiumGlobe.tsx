@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import type { Satellite, SatellitePosition } from '@/types';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
+import type { Satellite, SatellitePosition } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
 if (typeof window !== 'undefined') {
@@ -25,6 +25,8 @@ const EARTH_NIGHT_TEXTURE_URL = '/images/earth/earth-night-lights.jpg?v=20260321
 const EARTH_DAY_NIGHT_ALPHA = 0.12;
 const EARTH_LIGHTS_DAY_ALPHA = 0.0;
 const EARTH_LIGHTS_NIGHT_ALPHA = 1.0;
+const ORBIT_VISUAL_LIFT_MIN_KM = 150;
+const ORBIT_VISUAL_LIFT_MAX_KM = 500;
 
 function getOrbitPointColor(orbitType: string) {
   switch (orbitType?.toUpperCase()) {
@@ -39,6 +41,18 @@ function getOrbitPointColor(orbitType: string) {
     default:
       return '#94a3b8';
   }
+}
+
+function getOrbitTrackColor(orbitType: string) {
+  return orbitType ? getOrbitPointColor(orbitType) : ORBIT_COLOR;
+}
+
+function getOrbitVisualAltitudeKm(altKm: number) {
+  const liftKm = Math.min(
+    ORBIT_VISUAL_LIFT_MAX_KM,
+    Math.max(ORBIT_VISUAL_LIFT_MIN_KM, altKm * 0.08)
+  );
+  return altKm + liftKm;
 }
 
 interface CesiumGlobeProps {
@@ -113,7 +127,7 @@ function buildOrbitSegments(
 ): InstanceType<typeof import('cesium').Cartesian3>[][] {
   const lat = latDeg * (Math.PI / 180);
   const lng = lngDeg * (Math.PI / 180);
-  const altM = altKm * 1000;
+  const altM = getOrbitVisualAltitudeKm(altKm) * 1000;
 
   const e1x = Math.cos(lat) * Math.cos(lng);
   const e1y = Math.cos(lat) * Math.sin(lng);
@@ -273,6 +287,61 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
   satellitesRef.current = satellites;
   selectedSatelliteRef.current = selectedSatellite;
 
+  const drawOrbitSegments = useCallback((
+    orbitType: string,
+    segments: InstanceType<typeof import('cesium').Cartesian3>[][]
+  ) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    const color = Cesium.Color.fromCssColorString(getOrbitTrackColor(orbitType));
+
+    for (const segment of segments) {
+      if (segment.length < 2) continue;
+
+      const glowEntity = viewer.entities.add({
+        polyline: {
+          positions: segment,
+          width: 8,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            color: color.withAlpha(0.2),
+            glowPower: 0.2,
+            taperPower: 0.75,
+          }),
+          clampToGround: false,
+          arcType: Cesium.ArcType.NONE,
+          depthFailMaterial: new Cesium.PolylineGlowMaterialProperty({
+            color: color.withAlpha(0.12),
+            glowPower: 0.16,
+            taperPower: 0.75,
+          }),
+        },
+      });
+      orbitEntitiesRef.current.push(glowEntity);
+
+      const dashEntity = viewer.entities.add({
+        polyline: {
+          positions: segment,
+          width: 3,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: color.withAlpha(0.95),
+            dashLength: 18,
+            dashPattern: 0xf0f0,
+          }),
+          clampToGround: false,
+          arcType: Cesium.ArcType.NONE,
+          depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+            color: color.withAlpha(0.45),
+            dashLength: 18,
+            dashPattern: 0xf0f0,
+          }),
+        },
+      });
+      orbitEntitiesRef.current.push(dashEntity);
+    }
+  }, []);
+
   const clearOrbit = useCallback(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
@@ -319,23 +388,7 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     clearOrbit();
 
     const segments = buildOrbitSegments(Cesium, lat, lng, altKm, satellite.inclination, 360);
-    const lineColor = Cesium.Color.fromCssColorString(ORBIT_COLOR).withAlpha(0.9);
-    const dimColor = Cesium.Color.fromCssColorString(ORBIT_COLOR).withAlpha(0.2);
-
-    for (const segment of segments) {
-      if (segment.length < 2) continue;
-      const entity = viewer.entities.add({
-        polyline: {
-          positions: segment,
-          width: 2,
-          material: lineColor,
-          clampToGround: false,
-          arcType: Cesium.ArcType.NONE,
-          depthFailMaterial: dimColor,
-        },
-      });
-      orbitEntitiesRef.current.push(entity);
-    }
+    drawOrbitSegments(satellite.orbitType, segments);
 
     clearCoverage();
 
@@ -395,7 +448,7 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     coverageSatIdRef.current = satellite.id;
 
     viewer.scene.requestRender();
-  }, [clearOrbit, clearCoverage]);
+  }, [clearOrbit, clearCoverage, drawOrbitSegments]);
 
   const initViewer = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
@@ -961,7 +1014,7 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     if (viewerState !== 'ready' || !selectedSatellite) return;
 
     drawInstant(selectedSatellite);
-  }, [selectedSatellite, viewerState, clearCoverage, clearOrbit, drawInstant]);
+  }, [selectedSatellite, viewerState, clearCoverage, clearOrbit, drawInstant, drawOrbitSegments]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

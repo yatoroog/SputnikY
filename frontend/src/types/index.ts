@@ -20,6 +20,11 @@ export interface CatalogStatus {
   note: string | null;
 }
 
+export interface FilterFacets {
+  countries: string[];
+  purposes: string[];
+}
+
 export interface SatellitePosition {
   id: string;
   lat: number;
