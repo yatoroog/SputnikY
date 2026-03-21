@@ -37,9 +37,7 @@ export default function SatelliteModel3D() {
       container.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
-      // Lighting
-      const ambient = new THREE.AmbientLight(0x404060, 2);
-      scene.add(ambient);
+      scene.add(new THREE.AmbientLight(0x404060, 2));
 
       const key = new THREE.DirectionalLight(0xffffff, 3);
       key.position.set(5, 3, 5);
@@ -53,7 +51,6 @@ export default function SatelliteModel3D() {
       rim.position.set(0, -2, -5);
       scene.add(rim);
 
-      // Load model
       const loader = new GLTFLoader();
       let model: InstanceType<typeof THREE.Group> | null = null;
 
@@ -61,7 +58,6 @@ export default function SatelliteModel3D() {
         if (cancelled) return;
         model = gltf.scene;
 
-        // Apply metallic material
         model.traverse((child) => {
           if ((child as InstanceType<typeof THREE.Mesh>).isMesh) {
             const mesh = child as InstanceType<typeof THREE.Mesh>;
@@ -76,7 +72,6 @@ export default function SatelliteModel3D() {
         scene.add(model);
       });
 
-      // Animate
       let rafId: number;
       const tick = () => {
         if (cancelled) return;

@@ -66,10 +66,8 @@ export default function SatelliteCard() {
 
   return (
     <div className="panel-base glass-shimmer w-[360px] h-fit max-h-full overflow-y-auto animate-slide-in-right">
-      {/* Top specular line */}
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
 
-      {/* Header */}
       <div className="relative p-5">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
@@ -105,10 +103,8 @@ export default function SatelliteCard() {
         )}
       </div>
 
-      {/* Glass divider */}
       <div className="mx-5 h-px glass-divider-h" />
 
-      {/* Parameters */}
       <div className="p-5">
         <h3 className="text-[11px] text-[#637196] uppercase tracking-[0.24em] mb-4">
           {'\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B'}
@@ -131,10 +127,8 @@ export default function SatelliteCard() {
         </div>
       </div>
 
-      {/* Glass divider */}
       <div className="mx-5 h-px glass-divider-h" />
 
-      {/* Close-up toggle */}
       <div className="p-5">
         <button
           onClick={() => setCloseUp(!isCloseUp)}
@@ -144,7 +138,6 @@ export default function SatelliteCard() {
               : 'bg-white/5 border border-white/10 hover:bg-white/[0.08]'
           }`}
         >
-          {/* Toggle track */}
           <div className="relative w-10 h-5 flex-shrink-0">
             <div
               className={`absolute inset-0 rounded-full transition-colors duration-300 ${
