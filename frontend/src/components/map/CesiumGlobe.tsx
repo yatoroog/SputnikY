@@ -15,11 +15,16 @@ const EARTH_RADIUS_METERS = 6_378_137;
 const INITIAL_CAMERA_RANGE_METERS = 22_000_000;
 
 const GLOBE_BACKGROUND = '#010108';
-const GLOBE_BASE = '#0a1628';
+const GLOBE_BASE = '#03050a';
 const GLOBE_COUNTRY_STROKE = '#c4cedd';
 const LABEL_COLOR = '#f8fafc';
 const ORBIT_COLOR = '#a855f7';
 const COVERAGE_COLOR = '#a855f7';
+const EARTH_DAY_TEXTURE_URL = '/images/earth/earth-day-blue-marble.jpg?v=20260321b';
+const EARTH_NIGHT_TEXTURE_URL = '/images/earth/earth-night-lights.jpg?v=20260321a';
+const EARTH_DAY_NIGHT_ALPHA = 0.12;
+const EARTH_LIGHTS_DAY_ALPHA = 0.0;
+const EARTH_LIGHTS_NIGHT_ALPHA = 1.0;
 
 function getOrbitPointColor(orbitType: string) {
   switch (orbitType?.toUpperCase()) {
@@ -179,6 +184,40 @@ function buildOrbitSegments(
   if (currentSegment.length >= 2) segments.push(currentSegment);
 
   return segments;
+}
+
+async function loadEarthImageryLayers(
+  Cesium: typeof import('cesium'),
+  viewer: InstanceType<typeof import('cesium').Viewer>
+) {
+  const [dayProvider, nightProvider] = await Promise.all([
+    Cesium.SingleTileImageryProvider.fromUrl(EARTH_DAY_TEXTURE_URL, {
+      credit: new Cesium.Credit('NASA Blue Marble Next Generation'),
+    }),
+    Cesium.SingleTileImageryProvider.fromUrl(EARTH_NIGHT_TEXTURE_URL, {
+      credit: new Cesium.Credit('NASA Earth at Night'),
+    }),
+  ]);
+
+  if (viewer.isDestroyed()) return;
+
+  viewer.imageryLayers.removeAll();
+
+  const dayLayer = viewer.imageryLayers.addImageryProvider(dayProvider);
+  dayLayer.dayAlpha = 1.0;
+  dayLayer.nightAlpha = EARTH_DAY_NIGHT_ALPHA;
+  dayLayer.brightness = 1.0;
+  dayLayer.contrast = 1.06;
+  dayLayer.gamma = 1.03;
+  dayLayer.saturation = 1.05;
+
+  const nightLayer = viewer.imageryLayers.addImageryProvider(nightProvider);
+  nightLayer.dayAlpha = EARTH_LIGHTS_DAY_ALPHA;
+  nightLayer.nightAlpha = EARTH_LIGHTS_NIGHT_ALPHA;
+  nightLayer.brightness = 1.18;
+  nightLayer.contrast = 1.32;
+  nightLayer.gamma = 1.02;
+  nightLayer.saturation = 1.1;
 }
 
 export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlobeProps) {
@@ -417,20 +456,25 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
 
       viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(GLOBE_BACKGROUND);
       viewer.scene.fog.enabled = true;
-      viewer.scene.fog.density = 2.0e-4;
-      viewer.scene.fog.minimumBrightness = 0.03;
+      viewer.scene.fog.density = 1.35e-4;
+      viewer.scene.fog.minimumBrightness = 0.02;
       if (viewer.scene.moon) viewer.scene.moon.show = false;
       if (viewer.scene.sun) viewer.scene.sun.show = true;
       if (viewer.scene.skyAtmosphere) {
         viewer.scene.skyAtmosphere.show = true;
-        viewer.scene.skyAtmosphere.brightnessShift = -0.15;
-        viewer.scene.skyAtmosphere.saturationShift = 0.15;
+        viewer.scene.skyAtmosphere.brightnessShift = -0.08;
+        viewer.scene.skyAtmosphere.saturationShift = 0.08;
       }
       viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString(GLOBE_BASE);
       viewer.scene.globe.depthTestAgainstTerrain = true;
       viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.dynamicAtmosphereLighting = true;
+      viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
       viewer.scene.globe.showGroundAtmosphere = true;
       viewer.scene.globe.showWaterEffect = false;
+      viewer.scene.globe.atmosphereLightIntensity = 14;
+      viewer.scene.globe.atmosphereSaturationShift = 0.08;
+      viewer.scene.globe.atmosphereBrightnessShift = -0.04;
       viewer.scene.postProcessStages.fxaa.enabled = true;
       viewer.screenSpaceEventHandler.removeInputAction(
         Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK
@@ -517,18 +561,8 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
 
       void (async () => {
         try {
-          const url = Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII');
-          const provider = await Cesium.TileMapServiceImageryProvider.fromUrl(url);
-          if (!viewer.isDestroyed()) {
-            const layer = viewer.imageryLayers.addImageryProvider(provider);
-            layer.alpha = 0.96;
-            layer.brightness = 0.65;
-            layer.contrast = 1.2;
-            layer.gamma = 1.02;
-            layer.saturation = 0.15;
-            layer.hue = -0.02;
-            viewer.scene.requestRender();
-          }
+          await loadEarthImageryLayers(Cesium, viewer);
+          viewer.scene.requestRender();
         } catch {}
 
         try {
