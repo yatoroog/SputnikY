@@ -14,9 +14,10 @@ const SatelliteModel3D = dynamic(() => import('./SatelliteModel3D'), {
 });
 
 const EARTH_RADIUS_KM = 6_371;
-const API_KEY = 'ee37b3dd-50f6-4958-8612-7ec94396b79b';
+const MAPGL_API_KEY = process.env.NEXT_PUBLIC_2GIS_MAPGL_KEY?.trim() ?? '';
 const STYLE_DARK = 'e05ac437-fcc2-4845-ad74-b1de9ce07555';
 const STYLE_LIGHT = 'c080bb6a-8134-4993-93a1-5b4d8c36a59b';
+const MAPGL_PLACEHOLDER_KEY = 'your_2gis_mapgl_key_here';
 
 type MapGLModule = Awaited<ReturnType<typeof load>>;
 type MapInstance = InstanceType<MapGLModule['Map']>;
@@ -76,6 +77,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   const currentStyleRef = useRef<string | null>(null);
 
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
   const selectedSatRef = useRef<Satellite | null>(selectedSatellite);
@@ -92,34 +94,50 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     let cancelled = false;
 
     (async () => {
-      const mapgl = await load();
-      if (cancelled || !containerRef.current) return;
+      if (!MAPGL_API_KEY || MAPGL_API_KEY === MAPGL_PLACEHOLDER_KEY) {
+        setMapError('Для 2D-карты не задан NEXT_PUBLIC_2GIS_MAPGL_KEY.');
+        return;
+      }
 
-      mapglRef.current = mapgl;
+      try {
+        const mapgl = await load();
+        if (cancelled || !containerRef.current) return;
 
-      const currentTheme = useThemeStore.getState().isDark;
-      const initStyle = currentTheme ? STYLE_DARK : STYLE_LIGHT;
-      currentStyleRef.current = initStyle;
-      const map = new mapgl.Map(containerRef.current, {
-        key: API_KEY,
-        center: [60, 30],
-        zoom: 3,
-        zoomControl: true,
-        style: initStyle,
-        defaultBackgroundColor: currentTheme ? '#1C2429' : '#F5F2E0',
-      });
+        mapglRef.current = mapgl;
 
-      map.on('click', (e) => {
-        if (markerClickedRef.current) {
-          markerClickedRef.current = false;
-          return;
+        const currentTheme = useThemeStore.getState().isDark;
+        const initStyle = currentTheme ? STYLE_DARK : STYLE_LIGHT;
+        currentStyleRef.current = initStyle;
+        const map = new mapgl.Map(containerRef.current, {
+          key: MAPGL_API_KEY,
+          center: [60, 30],
+          zoom: 3,
+          zoomControl: true,
+          style: initStyle,
+          defaultBackgroundColor: currentTheme ? '#1C2429' : '#F5F2E0',
+        });
+
+        map.on('click', (e) => {
+          if (markerClickedRef.current) {
+            markerClickedRef.current = false;
+            return;
+          }
+          const lngLat = e.lngLat;
+          setClickedLocation({ lat: lngLat[1], lng: lngLat[0] });
+        });
+
+        setMapError(null);
+        mapRef.current = map;
+        setMapReady(true);
+      } catch (error) {
+        if (!cancelled) {
+          setMapError(
+            error instanceof Error
+              ? `Не удалось инициализировать 2D-карту: ${error.message}`
+              : 'Не удалось инициализировать 2D-карту.'
+          );
         }
-        const lngLat = e.lngLat;
-        setClickedLocation({ lat: lngLat[1], lng: lngLat[0] });
-      });
-
-      mapRef.current = map;
-      setMapReady(true);
+      }
     })();
 
     return () => {
@@ -396,6 +414,18 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   return (
     <div className="relative w-full h-full" style={{ background: '#0a1628' }}>
       <div ref={containerRef} className="absolute inset-0" />
+      {mapError && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0a1628]/90 px-6 text-center">
+          <div className="panel-base max-w-md p-5">
+            <p className="text-sm font-semibold text-[#eef2ff]">
+              2D-карта недоступна
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-[#94a3c0]">
+              {mapError}
+            </p>
+          </div>
+        </div>
+      )}
       {isCloseUp && selectedSatellite && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <SatelliteModel3D />

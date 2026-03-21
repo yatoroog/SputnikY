@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,23 +37,26 @@ func main() {
 	service := satellite.NewService()
 
 	// --- Load satellites: try N2YO API first, fall back to local TLE (~500 sats) ---
-	n2yoKey := os.Getenv("N2YO_API_KEY")
-	if n2yoKey == "" {
-		n2yoKey = "97BW46-YA9RMR-F3SALS-5OWE"
-	}
-	n2yoClient := n2yo.NewClient(n2yoKey)
+	n2yoKey := strings.TrimSpace(os.Getenv("N2YO_API_KEY"))
+	var n2yoClient *n2yo.Client
 
-	log.Info().Msg("Trying N2YO API for real-time satellite data...")
-	tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
-	if err != nil {
-		log.Warn().Err(err).Msg("N2YO fetch failed (likely rate limit), using local TLE file")
-		loadLocalTLE(service, fmt.Sprintf("N2YO startup fetch failed: %v", err))
+	if n2yoKey == "" {
+		log.Warn().Msg("N2YO_API_KEY is not configured, using local TLE catalog")
+		loadLocalTLE(service, "N2YO startup fetch skipped: N2YO_API_KEY is not configured.")
 	} else {
-		if err := service.LoadFromTLE(tleData); err != nil {
-			log.Fatal().Err(err).Msg("Failed to initialize satellites from N2YO data")
+		n2yoClient = n2yo.NewClient(n2yoKey)
+		log.Info().Msg("Trying N2YO API for real-time satellite data...")
+		tleData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
+		if err != nil {
+			log.Warn().Err(err).Msg("N2YO fetch failed (likely rate limit), using local TLE file")
+			loadLocalTLE(service, fmt.Sprintf("N2YO startup fetch failed: %v", err))
+		} else {
+			if err := service.LoadFromTLE(tleData); err != nil {
+				log.Fatal().Err(err).Msg("Failed to initialize satellites from N2YO data")
+			}
+			service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
+			log.Info().Int("satellites", len(tleData)).Msg("Initial satellite data loaded from N2YO")
 		}
-		service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
-		log.Info().Int("satellites", len(tleData)).Msg("Initial satellite data loaded from N2YO")
 	}
 
 	// Initialize WebSocket hub
@@ -106,43 +110,46 @@ func main() {
 	}()
 
 	// Start background N2YO refresh worker (every 2 hours — within rate limits)
-	stopRefresh := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Hour)
-		defer ticker.Stop()
+	var stopRefresh chan struct{}
+	if n2yoClient != nil {
+		stopRefresh = make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(2 * time.Hour)
+			defer ticker.Stop()
 
-		log.Info().Msg("N2YO refresh worker started (2h interval)")
+			log.Info().Msg("N2YO refresh worker started (2h interval)")
 
-		for {
-			select {
-			case <-ticker.C:
-				log.Info().Msg("Refreshing satellite data from N2YO...")
-				freshData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
-				if err != nil {
-					service.UpdateCatalogNote(fmt.Sprintf(
-						"N2YO refresh failed at %s: %v",
-						time.Now().UTC().Format(time.RFC3339),
-						err,
-					))
-					log.Warn().Err(err).Msg("N2YO refresh failed, keeping current data")
-					continue
+			for {
+				select {
+				case <-ticker.C:
+					log.Info().Msg("Refreshing satellite data from N2YO...")
+					freshData, err := n2yoClient.FetchGlobalTLEs(n2yo.DefaultCategories)
+					if err != nil {
+						service.UpdateCatalogNote(fmt.Sprintf(
+							"N2YO refresh failed at %s: %v",
+							time.Now().UTC().Format(time.RFC3339),
+							err,
+						))
+						log.Warn().Err(err).Msg("N2YO refresh failed, keeping current data")
+						continue
+					}
+					if err := service.ReplaceFromTLE(freshData); err != nil {
+						log.Warn().Err(err).Msg("Failed to replace satellites after N2YO refresh")
+						service.UpdateCatalogNote(fmt.Sprintf(
+							"N2YO refresh replace failed at %s: %v",
+							time.Now().UTC().Format(time.RFC3339),
+							err,
+						))
+						continue
+					}
+					service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
+				case <-stopRefresh:
+					log.Info().Msg("N2YO refresh worker stopped")
+					return
 				}
-				if err := service.ReplaceFromTLE(freshData); err != nil {
-					log.Warn().Err(err).Msg("Failed to replace satellites after N2YO refresh")
-					service.UpdateCatalogNote(fmt.Sprintf(
-						"N2YO refresh replace failed at %s: %v",
-						time.Now().UTC().Format(time.RFC3339),
-						err,
-					))
-					continue
-				}
-				service.SetCatalogStatus(models.CatalogSourceN2YO, time.Now().UTC(), "")
-			case <-stopRefresh:
-				log.Info().Msg("N2YO refresh worker stopped")
-				return
 			}
-		}
-	}()
+		}()
+	}
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -152,7 +159,9 @@ func main() {
 		<-quit
 		log.Info().Msg("Shutting down server...")
 		close(stopWorker)
-		close(stopRefresh)
+		if stopRefresh != nil {
+			close(stopRefresh)
+		}
 
 		if err := app.ShutdownWithTimeout(5 * time.Second); err != nil {
 			log.Error().Err(err).Msg("Server forced to shutdown")
