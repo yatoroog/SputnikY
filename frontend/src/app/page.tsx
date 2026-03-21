@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Cuboid, Map as MapIcon } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
+import { useThemeStore } from '@/store/themeStore';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import { useSatellites } from '@/hooks/useSatellites';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSimulatedPositions } from '@/hooks/useSimulatedPositions';
@@ -48,14 +50,21 @@ export default function HomePage() {
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
   const clickedLocation = useSatelliteStore((state) => state.clickedLocation);
   const isRealTime = useTimeStore((state) => state.isRealTime);
+  const isDark = useThemeStore((state) => state.isDark);
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
 
   useSatellites();
   useWebSocket(isRealTime);
   useSimulatedPositions();
 
+  useEffect(() => {
+    if (viewMode === '3d' && !isDark) {
+      useThemeStore.getState().toggle();
+    }
+  }, [viewMode]);
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-cosmos-bg" data-view={viewMode}>
+    <div className="relative w-screen h-screen overflow-hidden bg-cosmos-bg" data-view={viewMode} data-theme={isDark ? 'dark' : 'light'}>
       {/* Map */}
       <div className="absolute inset-0">
         {viewMode === '3d' ? (
@@ -118,6 +127,13 @@ export default function HomePage() {
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10">
         <TimelineControl />
       </div>
+
+      {/* Theme toggle — bottom right, only in 2D */}
+      {viewMode === '2d' && (
+        <div className="absolute bottom-5 right-4 z-20">
+          <ThemeToggle />
+        </div>
+      )}
     </div>
   );
 }
