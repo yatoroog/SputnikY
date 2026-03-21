@@ -267,10 +267,10 @@ func (h *Handlers) GetAreaPasses(c *fiber.Ctx) error {
 	now := time.Now().UTC()
 
 	type passResult struct {
-		SatID   string
-		SatName string
+		SatID     string
+		SatName   string
 		OrbitType string
-		Passes  []models.Pass
+		Passes    []models.Pass
 	}
 
 	results := make(chan passResult, len(allSats))
@@ -339,6 +339,251 @@ func (h *Handlers) GetAreaPasses(c *fiber.Ctx) error {
 		"passes": allPasses,
 	})
 }
+
+// GetSatelliteApproaches predicts ground-track approaches of a satellite
+// within a radius around the given coordinates.
+// GET /api/approaches
+// Required query params: id, lat, lng
+// Optional query params: radius_km (default 100), hours (default 4), notify_before_min (default 60)
+func (h *Handlers) GetSatelliteApproaches(c *fiber.Ctx) error {
+	id := c.Query("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing satellite ID (id parameter)",
+		})
+	}
+
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	if latStr == "" || lngStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing observer coordinates (lat, lng parameters)",
+		})
+	}
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid latitude: must be between -90 and 90",
+		})
+	}
+
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil || lng < -180 || lng > 180 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid longitude: must be between -180 and 180",
+		})
+	}
+
+	radiusKm := c.QueryFloat("radius_km", 100)
+	if radiusKm <= 0 || radiusKm > 5000 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Radius must be between 0 and 5000 km",
+		})
+	}
+
+	hours := c.QueryInt("hours", 4)
+	if hours < 1 || hours > 168 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hours must be between 1 and 168",
+		})
+	}
+
+	notifyBeforeMinutes := c.QueryInt("notify_before_min", 60)
+	if notifyBeforeMinutes < 0 || notifyBeforeMinutes > 1440 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "notify_before_min must be between 0 and 1440",
+		})
+	}
+
+	sat, err := h.service.GetByID(id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	approaches, err := satellite.CalculateApproaches(
+		sat.TLE,
+		lat,
+		lng,
+		radiusKm,
+		time.Now().UTC(),
+		hours,
+		time.Duration(notifyBeforeMinutes)*time.Minute,
+	)
+	if err != nil {
+		log.Error().Err(err).Str("satellite_id", id).Msg("Failed to calculate approaches")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to calculate approaches",
+		})
+	}
+
+	for i := range approaches {
+		approaches[i].SatelliteID = sat.ID
+		approaches[i].SatelliteName = sat.Name
+	}
+
+	return c.JSON(fiber.Map{
+		"satellite": fiber.Map{
+			"id":         sat.ID,
+			"name":       sat.Name,
+			"norad_id":   sat.NoradID,
+			"orbit_type": sat.OrbitType,
+			"country":    sat.Country,
+			"purpose":    sat.Purpose,
+		},
+		"observer": fiber.Map{
+			"lat":       lat,
+			"lng":       lng,
+			"radius_km": radiusKm,
+		},
+		"hours":             hours,
+		"notify_before_min": notifyBeforeMinutes,
+		"approaches":        approaches,
+	})
+}
+
+// GetAreaSatelliteApproaches predicts approaches for all satellites in the catalog
+// within a radius around the given coordinates.
+// GET /api/approaches/area
+// Required query params: lat, lng
+// Optional query params: radius_km (default 100), hours (default 4), notify_before_min (default 60)
+func (h *Handlers) GetAreaSatelliteApproaches(c *fiber.Ctx) error {
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	if latStr == "" || lngStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing observer coordinates (lat, lng parameters)",
+		})
+	}
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid latitude: must be between -90 and 90",
+		})
+	}
+
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil || lng < -180 || lng > 180 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid longitude: must be between -180 and 180",
+		})
+	}
+
+	radiusKm := c.QueryFloat("radius_km", 100)
+	if radiusKm <= 0 || radiusKm > 5000 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Radius must be between 0 and 5000 km",
+		})
+	}
+
+	hours := c.QueryInt("hours", 4)
+	if hours < 1 || hours > 168 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hours must be between 1 and 168",
+		})
+	}
+
+	notifyBeforeMinutes := c.QueryInt("notify_before_min", 60)
+	if notifyBeforeMinutes < 0 || notifyBeforeMinutes > 1440 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "notify_before_min must be between 0 and 1440",
+		})
+	}
+
+	allSats := h.service.GetAll(models.FilterParams{})
+	now := time.Now().UTC()
+
+	type areaApproachEvent struct {
+		Satellite fiber.Map       `json:"satellite"`
+		Approach  models.Approach `json:"approach"`
+	}
+
+	type areaApproachResult struct {
+		Events []areaApproachEvent
+	}
+
+	results := make(chan areaApproachResult, len(allSats))
+	sem := make(chan struct{}, 20)
+
+	for _, s := range allSats {
+		go func(sat *models.Satellite) {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			defer func() {
+				if r := recover(); r != nil {
+					results <- areaApproachResult{}
+				}
+			}()
+
+			approaches, err := satellite.CalculateApproaches(
+				sat.TLE,
+				lat,
+				lng,
+				radiusKm,
+				now,
+				hours,
+				time.Duration(notifyBeforeMinutes)*time.Minute,
+			)
+			if err != nil || len(approaches) == 0 {
+				results <- areaApproachResult{}
+				return
+			}
+
+			events := make([]areaApproachEvent, 0, len(approaches))
+			for _, approach := range approaches {
+				approach.SatelliteID = sat.ID
+				approach.SatelliteName = sat.Name
+				events = append(events, areaApproachEvent{
+					Satellite: fiber.Map{
+						"id":         sat.ID,
+						"name":       sat.Name,
+						"norad_id":   sat.NoradID,
+						"orbit_type": sat.OrbitType,
+						"country":    sat.Country,
+						"purpose":    sat.Purpose,
+					},
+					Approach: approach,
+				})
+			}
+
+			results <- areaApproachResult{Events: events}
+		}(s)
+	}
+
+	allEvents := make([]areaApproachEvent, 0)
+	for i := 0; i < len(allSats); i++ {
+		result := <-results
+		allEvents = append(allEvents, result.Events...)
+	}
+
+	for i := 0; i < len(allEvents); i++ {
+		for j := i + 1; j < len(allEvents); j++ {
+			left := allEvents[i].Approach
+			right := allEvents[j].Approach
+
+			if left.NotifyAt > right.NotifyAt ||
+				(left.NotifyAt == right.NotifyAt && left.StartAt > right.StartAt) {
+				allEvents[i], allEvents[j] = allEvents[j], allEvents[i]
+			}
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"observer": fiber.Map{
+			"lat":       lat,
+			"lng":       lng,
+			"radius_km": radiusKm,
+		},
+		"hours":             hours,
+		"notify_before_min": notifyBeforeMinutes,
+		"approaches":        allEvents,
+	})
+}
+
 // UploadTLE handles TLE data upload (raw text body).
 // POST /api/tle/upload
 func (h *Handlers) UploadTLE(c *fiber.Ctx) error {

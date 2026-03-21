@@ -7,6 +7,7 @@ import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
 import { useThemeStore } from '@/store/themeStore';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import NotificationCenter from '@/components/ui/NotificationCenter';
 import { useSatellites } from '@/hooks/useSatellites';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSimulatedPositions } from '@/hooks/useSimulatedPositions';
@@ -112,16 +113,19 @@ export default function HomePage() {
         <Sidebar />
       </div>
 
+      {/* Notification center */}
+      <NotificationCenter />
+
       {/* Right satellite card */}
       {!isComparisonOpen && selectedSatellite && (
-        <div className="absolute top-4 right-4 bottom-28 z-10">
+        <div className="absolute top-20 right-4 bottom-28 z-10">
           <SatelliteCard />
         </div>
       )}
 
       {/* Right area passes panel */}
       {!isComparisonOpen && !selectedSatellite && clickedLocation && (
-        <div className="absolute top-4 right-4 bottom-28 z-10">
+        <div className="absolute top-20 right-4 bottom-28 z-10">
           <AreaPassesPanel />
         </div>
       )}

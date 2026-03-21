@@ -46,6 +46,43 @@ export interface Pass {
   duration: number; // Seconds
 }
 
+export interface ObserverArea {
+  name?: string;
+  lat: number;
+  lng: number;
+  radiusKm: number;
+}
+
+export interface TrackedSatellite {
+  id: string;
+  name: string;
+  noradId: number;
+  orbitType: string;
+  country: string;
+  purpose: string;
+}
+
+export interface SatelliteApproach {
+  satelliteId: string;
+  satelliteName: string;
+  startAt: number;
+  endAt: number;
+  closestAt: number;
+  notifyAt: number;
+  minDistanceKm: number;
+  radiusKm: number;
+  duration: number;
+  closestLat: number;
+  closestLng: number;
+  closestAltitudeKm: number;
+  closestVelocityKmS: number;
+}
+
+export interface AreaSatelliteApproach {
+  satellite: TrackedSatellite;
+  approach: SatelliteApproach;
+}
+
 export interface WSMessage {
   type: 'positions' | 'notification';
   data: unknown;
