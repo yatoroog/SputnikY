@@ -63,22 +63,25 @@ export default function SatelliteCard() {
   ];
 
   return (
-    <div className="panel-base w-[360px] h-fit max-h-full overflow-y-auto animate-slide-in-right">
+    <div className="panel-base glass-shimmer w-[360px] h-fit max-h-full overflow-y-auto animate-slide-in-right">
+      {/* Top specular line */}
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
+
       {/* Header */}
-      <div className="p-4 border-b border-cosmos-border">
+      <div className="relative p-5">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-[#e5e7eb] truncate">
+            <h2 className="text-lg font-semibold text-white truncate">
               {sat.name}
             </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-[#9ca3af]">NORAD {sat.noradId}</span>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-xs text-[#637196]">NORAD {sat.noradId}</span>
               <span
                 className="badge"
                 style={{
-                  backgroundColor: `${orbitColor}20`,
+                  backgroundColor: `${orbitColor}15`,
                   color: orbitColor,
-                  border: `1px solid ${orbitColor}40`,
+                  border: `1px solid ${orbitColor}30`,
                 }}
               >
                 {sat.orbitType}
@@ -87,48 +90,56 @@ export default function SatelliteCard() {
           </div>
           <button
             onClick={handleClose}
-            className="p-1 text-[#9ca3af] hover:text-[#e5e7eb] transition-colors duration-200 flex-shrink-0"
+            className="premium-icon-button flex h-8 w-8 items-center justify-center rounded-xl text-[#637196] hover:text-white transition-all duration-200 flex-shrink-0"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {sat.purpose && (
-          <p className="text-xs text-[#9ca3af] mt-2">
+          <p className="text-xs text-[#94a3c0] mt-3">
             {'\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435: '}{sat.purpose}
           </p>
         )}
       </div>
 
+      {/* Glass divider */}
+      <div className="mx-5 h-px glass-divider-h" />
+
       {/* Parameters */}
-      <div className="p-4">
-        <h3 className="text-xs text-[#9ca3af] uppercase tracking-wider mb-3">
+      <div className="p-5">
+        <h3 className="text-[11px] text-[#637196] uppercase tracking-[0.24em] mb-4">
           {'\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B'}
         </h3>
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {params.map((param) => {
             const Icon = param.icon;
             return (
               <div key={param.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon size={14} className="text-accent-cyan flex-shrink-0" />
-                  <span className="text-sm text-[#9ca3af]">{param.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5">
+                    <Icon size={13} className="text-accent-cyan" />
+                  </div>
+                  <span className="text-sm text-[#94a3c0]">{param.label}</span>
                 </div>
-                <span className="text-sm text-[#e5e7eb] font-medium">{param.value}</span>
+                <span className="text-sm text-[#eef2ff] font-medium">{param.value}</span>
               </div>
             );
           })}
         </div>
       </div>
 
+      {/* Glass divider */}
+      <div className="mx-5 h-px glass-divider-h" />
+
       {/* Orbit indicator */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-accent-cyan/5 border border-accent-cyan/20">
+      <div className="p-5">
+        <div className="flex items-center gap-2.5 py-2.5 px-4 rounded-2xl bg-accent-cyan/5 border border-accent-cyan/15">
           <div
             className="w-2 h-2 rounded-full animate-pulse-glow"
             style={{ backgroundColor: '#06b6d4' }}
           />
-          <span className="text-xs text-accent-cyan">
+          <span className="text-xs text-accent-cyan/80">
             {'\u041E\u0440\u0431\u0438\u0442\u0430 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0430\u0435\u0442\u0441\u044F \u043D\u0430 \u0433\u043B\u043E\u0431\u0443\u0441\u0435'}
           </span>
         </div>

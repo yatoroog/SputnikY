@@ -13,7 +13,32 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className="dark">
-      <body className="bg-cosmos-bg text-[#e5e7eb] antialiased">
+      <body className="bg-cosmos-bg text-[#eef2ff] antialiased">
+        {/* SVG filters for liquid glass distortion */}
+        <svg className="fixed w-0 h-0" aria-hidden="true">
+          <defs>
+            <filter id="glass-distortion">
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.015"
+                numOctaves="3"
+                seed="1"
+                result="noise"
+              />
+              <feDisplacementMap
+                in="SourceGraphic"
+                in2="noise"
+                scale="3"
+                xChannelSelector="R"
+                yChannelSelector="G"
+              />
+            </filter>
+            <filter id="glass-glow">
+              <feGaussianBlur stdDeviation="8" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+        </svg>
         {children}
       </body>
     </html>

@@ -43,23 +43,24 @@ export default function SearchBar() {
   }, []);
 
   return (
-    <div className="premium-field group relative overflow-hidden rounded-[18px]">
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_70%)] opacity-80" />
+    <div className="premium-field group relative overflow-hidden rounded-2xl">
+      {/* Subtle glow on focus */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.08),transparent_70%)] opacity-0 group-focus-within:opacity-100 transition-opacity duration-300" />
       <Search
-        size={16}
-        className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7887a3] transition-colors duration-200 group-focus-within:text-[#7fe8ff]"
+        size={15}
+        className="absolute left-4 top-1/2 -translate-y-1/2 text-[#4a5578] transition-colors duration-200 group-focus-within:text-accent-cyan"
       />
       <input
         type="text"
         value={localValue}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder={'\u041F\u043E\u0438\u0441\u043A \u0441\u043F\u0443\u0442\u043D\u0438\u043A\u043E\u0432...'}
-        className="w-full rounded-[18px] bg-transparent py-4 pl-12 pr-11 text-[15px] text-[#eef4ff] placeholder-[#7f8ca7]/70 focus:outline-none"
+        placeholder={'Поиск спутников...'}
+        className="w-full rounded-2xl bg-transparent py-3.5 pl-11 pr-10 text-[14px] text-[#eef2ff] placeholder-[#4a5578] focus:outline-none"
       />
       {localValue && (
         <button
           onClick={handleClear}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-[#7f8ca7] transition-colors duration-200 hover:text-[#eef4ff]"
+          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#4a5578] transition-colors duration-200 hover:text-white"
         >
           <X size={14} />
         </button>
