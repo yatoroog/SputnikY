@@ -70,4 +70,4 @@ SputnikX/
 
 - **Backend:** Go 1.22, Fiber, go-satellite (SGP4), zerolog, WebSocket
 - **Frontend:** Next.js 14, TypeScript, CesiumJS, Resium, Zustand, Tailwind CSS
-- **Инфра:** Docker, Docker Compose
+- **Инфраструктура:** Docker, Docker Compose
