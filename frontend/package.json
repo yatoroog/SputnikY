@@ -4,9 +4,15 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/copy-cesium.mjs",
+<<<<<<< HEAD
     "dev": "next dev --webpack",
     "prebuild": "node scripts/copy-cesium.mjs",
     "build": "next build --webpack",
+=======
+    "dev": "next dev",
+    "prebuild": "node scripts/copy-cesium.mjs",
+    "build": "next build",
+>>>>>>> f33955c59c5355fede221839441827aa4f69039f
     "start": "next start",
     "lint": "next lint"
   },
@@ -15,7 +21,11 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.468.0",
+<<<<<<< HEAD
     "next": "^16.2.1",
+=======
+    "next": "14.2.21",
+>>>>>>> f33955c59c5355fede221839441827aa4f69039f
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "resium": "^1.18.2",
@@ -27,7 +37,11 @@
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
     "canvas": "^3.2.1",
+<<<<<<< HEAD
     "copy-webpack-plugin": "^14.0.0",
+=======
+    "copy-webpack-plugin": "^12.0.2",
+>>>>>>> f33955c59c5355fede221839441827aa4f69039f
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.0"
