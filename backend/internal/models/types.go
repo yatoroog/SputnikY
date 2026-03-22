@@ -23,6 +23,8 @@ type Satellite struct {
 	Name        string  `json:"name"`
 	NoradID     int     `json:"norad_id"`
 	Country     string  `json:"country"`
+	OwnerCode   string  `json:"owner_code,omitempty"`
+	OwnerName   string  `json:"owner_name,omitempty"`
 	OrbitType   string  `json:"orbit_type"`
 	Purpose     string  `json:"purpose"`
 	Latitude    float64 `json:"latitude"`
@@ -111,6 +113,15 @@ type FilterParams struct {
 	OrbitType string `query:"orbit_type"`
 	Purpose   string `query:"purpose"`
 	Search    string `query:"search"`
+}
+
+// CatalogMetadata contains non-orbital catalog metadata resolved from external registries.
+type CatalogMetadata struct {
+	NoradID    int
+	ObjectType string
+	OwnerCode  string
+	OwnerName  string
+	LaunchDate string
 }
 
 // SubscribeMessage is sent by a WebSocket client to select which satellites to track.

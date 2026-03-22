@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -17,32 +18,35 @@ const baseURL = "https://celestrak.org/NORAD/elements/gp.php"
 // DefaultGroups — curated set of satellite groups giving a diverse, interesting view.
 // Intentionally excludes "active" (~15k sats) and full "starlink" (~10k) to keep rendering fast.
 var DefaultGroups = []string{
-	"stations",       // Space stations (ISS, CSS, etc.)
-	"visual",         // Brightest satellites
-	"weather",        // Weather satellites
-	"gps-ops",        // GPS operational
-	"resource",       // Earth resources
-	"science",        // Science satellites
-	"geodetic",       // Geodetic
-	"amateur",        // Amateur radio
-	"globalstar",     // Globalstar
-	"iridium",        // Iridium
-	"iridium-NEXT",   // Iridium NEXT
-	"oneweb",         // OneWeb
-	"orbcomm",        // Orbcomm
-	"sarsat",         // SARSAT
-	"geo",            // Geostationary
-	"military",       // Military
-	"noaa",           // NOAA
-	"goes",           // GOES
-	"planet",         // Planet Labs
-	"spire",          // Spire
-	"last-30-days",   // Recently launched
+	"stations",     // Space stations (ISS, CSS, etc.)
+	"visual",       // Brightest satellites
+	"weather",      // Weather satellites
+	"gps-ops",      // GPS operational
+	"resource",     // Earth resources
+	"science",      // Science satellites
+	"geodetic",     // Geodetic
+	"amateur",      // Amateur radio
+	"globalstar",   // Globalstar
+	"iridium",      // Iridium
+	"iridium-NEXT", // Iridium NEXT
+	"oneweb",       // OneWeb
+	"orbcomm",      // Orbcomm
+	"sarsat",       // SARSAT
+	"geo",          // Geostationary
+	"military",     // Military
+	"noaa",         // NOAA
+	"goes",         // GOES
+	"planet",       // Planet Labs
+	"spire",        // Spire
+	"last-30-days", // Recently launched
 }
 
 // Client fetches bulk TLE data from CelesTrak (no API key, no rate limits).
 type Client struct {
-	httpClient *http.Client
+	httpClient   *http.Client
+	cacheMu      sync.RWMutex
+	launchCache  map[string]map[int]models.CatalogMetadata
+	metadataByID map[int]models.CatalogMetadata
 }
 
 // NewClient creates a new CelesTrak client.
@@ -51,6 +55,8 @@ func NewClient() *Client {
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+		launchCache:  make(map[string]map[int]models.CatalogMetadata),
+		metadataByID: make(map[int]models.CatalogMetadata),
 	}
 }
 

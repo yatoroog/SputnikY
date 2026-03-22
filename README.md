@@ -38,7 +38,7 @@ web-platform-mso/
 │   ├── data/stations.tle        локальный fallback-каталог
 │   ├── internal/api/            REST handlers, router, middleware
 │   ├── internal/cache/          утилиты кэширования позиций
-│   ├── internal/celestrak/      заготовка клиента CelesTrak
+│   ├── internal/celestrak/      клиент CelesTrak GP + SATCAT enrichment
 │   ├── internal/models/         модели API, WS и доменные типы
 │   ├── internal/n2yo/           клиент N2YO REST API
 │   ├── internal/satellite/      propagation, orbit/pass/approach logic, catalog service
@@ -60,7 +60,7 @@ web-platform-mso/
 
 Примечания:
 - `frontend/public/cesium/` подготавливается скриптом `frontend/scripts/copy-cesium.mjs` при `npm run dev` и `npm run build`.
-- `backend/internal/celestrak/` сейчас не участвует в runtime-цепочке запуска, но лежит в репозитории как заготовка альтернативного клиента.
+- `backend/internal/celestrak/` используется в runtime для SATCAT enrichment метаданных каталога и при необходимости может также забирать bulk TLE из CelesTrak.
 - Основное состояние каталога backend хранит только в памяти процесса, без БД.
 
 ## Архитектура
@@ -99,7 +99,10 @@ Backend загружает и помечает каталог одним из и
   - SGP4/SDP4 propagation;
   - вычисление орбитального типа;
   - производные орбитальные параметры;
-  - эвристическое определение страны.
+  - fallback-эвристики для `country` и `purpose`, когда внешних метаданных недостаточно.
+- `backend/internal/celestrak/`
+  - SATCAT enrichment по `NORAD` / `INTDES`;
+  - разрешение `owner_code` / `owner_name` для каталога.
 - `backend/internal/satellite/passes.go`
   - прогноз пролётов над точкой наблюдения.
 - `backend/internal/satellite/approaches.go`
@@ -446,7 +449,7 @@ npm run dev
 ## Актуальные нюансы и ограничения
 
 - N2YO ограничен rate limit'ами; при ошибке backend уходит в fallback на локальный TLE или сохраняет текущий каталог без замены.
-- Поля `country` и `purpose` определяются эвристически по имени спутника и TLE, а не приходят как строгая нормализованная справочная классификация.
+- Поле `country` теперь заполняется в первую очередь через CelesTrak SATCAT `OWNER` и используется как display-значение `владелец / страна`; если SATCAT не дал метаданные, backend падает обратно на эвристику по имени спутника и TLE. Поле `purpose` по-прежнему определяется эвристически.
 - Центр уведомлений сейчас отслеживает фиксированную зону наблюдения: `Ростов-на-Дону`, радиус `100 км`.
 - Уведомления о сближениях работают только в режиме реального времени; при симуляции времени polling приостанавливается.
 - Сравнение группировок строится автоматически по названиям серий и ограничено `4` выбранными группами одновременно.

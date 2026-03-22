@@ -53,7 +53,7 @@ function formatMetricValue(grouping: SatelliteGrouping, metric: string): string 
 
 const COMPARISON_ROWS = [
   { id: 'satellites', label: 'Количество спутников' },
-  { id: 'countries', label: 'Страны и распределение' },
+  { id: 'countries', label: 'Владельцы / страны и распределение' },
   { id: 'orbits', label: 'Типы орбит' },
   { id: 'purposes', label: 'Назначения' },
   { id: 'altitude-range', label: 'Диапазон высот' },

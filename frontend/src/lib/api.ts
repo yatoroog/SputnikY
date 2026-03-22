@@ -84,6 +84,8 @@ type SatelliteWire = Partial<Satellite> & {
   name: string;
   norad_id?: number;
   orbit_type?: string;
+  owner_code?: string;
+  owner_name?: string;
 };
 
 type PassWire = Partial<Pass> & {
@@ -149,6 +151,8 @@ type ObserverAreaWire = Partial<ObserverArea> & {
 type TrackedSatelliteWire = Partial<TrackedSatellite> & {
   norad_id?: number;
   orbit_type?: string;
+  owner_code?: string;
+  owner_name?: string;
 };
 
 type SatelliteApproachWire = Partial<SatelliteApproach> & {
@@ -192,6 +196,8 @@ function normalizeSatellite(satellite: SatelliteWire): Satellite | null {
     name: satellite.name,
     noradId: satellite.noradId ?? satellite.norad_id ?? 0,
     country: satellite.country ?? 'Unknown',
+    ownerCode: satellite.ownerCode ?? satellite.owner_code ?? '',
+    ownerName: satellite.ownerName ?? satellite.owner_name ?? '',
     orbitType: satellite.orbitType ?? satellite.orbit_type ?? '',
     purpose: satellite.purpose ?? '',
     latitude: satellite.latitude ?? 0,
@@ -253,6 +259,8 @@ function normalizeTrackedSatellite(satellite: TrackedSatelliteWire): TrackedSate
     noradId: satellite.noradId ?? satellite.norad_id ?? 0,
     orbitType: satellite.orbitType ?? satellite.orbit_type ?? '',
     country: satellite.country ?? 'Unknown',
+    ownerCode: satellite.ownerCode ?? satellite.owner_code ?? '',
+    ownerName: satellite.ownerName ?? satellite.owner_name ?? '',
     purpose: satellite.purpose ?? '',
   };
 }
