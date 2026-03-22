@@ -8,12 +8,12 @@ import { useSatelliteStore } from '@/store/satelliteStore';
 import { useThemeStore } from '@/store/themeStore';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 import { fetchOrbit } from '@/lib/api';
+import { computeCoverageRadiusMeters } from '@/lib/coverage';
 
 const SatelliteModel3D = dynamic(() => import('./SatelliteModel3D'), {
   ssr: false,
 });
 
-const EARTH_RADIUS_KM = 6_371;
 const MAPGL_API_KEY = process.env.NEXT_PUBLIC_2GIS_MAPGL_KEY?.trim() ?? '';
 const STYLE_DARK = 'e05ac437-fcc2-4845-ad74-b1de9ce07555';
 const STYLE_LIGHT = 'c080bb6a-8134-4993-93a1-5b4d8c36a59b';
@@ -409,8 +409,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
     if (!hasRenderableCoords(lat, lng, altKm)) return;
 
-    const halfAngle = Math.acos(EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
-    const groundRadiusMeters = EARTH_RADIUS_KM * halfAngle * 1000;
+    const groundRadiusMeters = computeCoverageRadiusMeters(altKm);
     const color = getOrbitColor(selectedSatellite.orbitType);
 
     coverageCircleRef.current = new mapgl.Circle(map, {
