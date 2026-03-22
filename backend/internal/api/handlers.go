@@ -431,6 +431,8 @@ func (h *Handlers) GetSatelliteApproaches(c *fiber.Ctx) error {
 			"norad_id":   sat.NoradID,
 			"orbit_type": sat.OrbitType,
 			"country":    sat.Country,
+			"owner_code": sat.OwnerCode,
+			"owner_name": sat.OwnerName,
 			"purpose":    sat.Purpose,
 		},
 		"observer": fiber.Map{
@@ -544,6 +546,8 @@ func (h *Handlers) GetAreaSatelliteApproaches(c *fiber.Ctx) error {
 						"norad_id":   sat.NoradID,
 						"orbit_type": sat.OrbitType,
 						"country":    sat.Country,
+						"owner_code": sat.OwnerCode,
+						"owner_name": sat.OwnerName,
 						"purpose":    sat.Purpose,
 					},
 					Approach: approach,

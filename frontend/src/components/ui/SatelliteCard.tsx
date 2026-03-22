@@ -34,7 +34,7 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
   const params = [
     {
       icon: Globe,
-      label: '\u0421\u0442\u0440\u0430\u043D\u0430',
+      label: '\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446 / \u0441\u0442\u0440\u0430\u043D\u0430',
       value: sat.country || '\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E',
     },
     {

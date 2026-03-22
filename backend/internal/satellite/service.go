@@ -2,31 +2,30 @@ package satellite
 
 import (
 	"fmt"
+	"github.com/rs/zerolog/log"
+	"github.com/satellite-tracker/backend/internal/models"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
-	"github.com/satellite-tracker/backend/internal/models"
-	"github.com/satellite-tracker/backend/internal/tle"
 )
 
 // SatelliteService manages all tracked satellites and their state.
 type SatelliteService struct {
-	mu            sync.RWMutex
-	satellites    map[string]*models.Satellite
-	catalogStatus models.CatalogStatus
+	mu               sync.RWMutex
+	satellites       map[string]*models.Satellite
+	catalogStatus    models.CatalogStatus
+	metadataResolver MetadataResolver
 }
 
 // NewService creates a new SatelliteService.
-func NewService() *SatelliteService {
+func NewService(metadataResolver MetadataResolver) *SatelliteService {
 	return &SatelliteService{
 		satellites: make(map[string]*models.Satellite),
 		catalogStatus: models.CatalogStatus{
 			Source: models.CatalogSourceUnknown,
 		},
+		metadataResolver: metadataResolver,
 	}
 }
 
@@ -41,63 +40,14 @@ func cloneTimePtr(ts *time.Time) *time.Time {
 
 // LoadFromTLE creates Satellite objects from parsed TLE data and propagates initial positions.
 func (s *SatelliteService) LoadFromTLE(tleData []models.TLEData) error {
+	now := time.Now().UTC()
+	loadedSatellites, loaded := s.buildSatellites(tleData, now)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now().UTC()
-	loaded := 0
-
-	for _, td := range tleData {
-		noradID, err := tle.ExtractNoradID(td.Line1)
-		if err != nil {
-			log.Warn().Err(err).Str("name", td.Name).Msg("Failed to extract NORAD ID, skipping")
-			continue
-		}
-
-		intlDesig := tle.ExtractIntlDesignator(td.Line1)
-		periodMinutes, inclination, eccentricity := ExtractOrbitalParams(td)
-		orbitType := DetermineOrbitType(periodMinutes, eccentricity)
-		country := DetermineCountry(td.Name, intlDesig)
-		purpose := determinePurpose(td.Name)
-
-		epoch := ""
-		if len(td.Line1) >= 32 {
-			epoch = strings.TrimSpace(td.Line1[18:32])
-		}
-
-		sat := &models.Satellite{
-			ID:          uuid.New().String(),
-			Name:        td.Name,
-			NoradID:     noradID,
-			Country:     country,
-			OrbitType:   orbitType,
-			Purpose:     purpose,
-			Period:      periodMinutes,
-			Inclination: inclination,
-			Epoch:       epoch,
-			TLE:         td,
-		}
-
-		// Propagate initial position
-		lat, lng, alt, err := Propagate(td, now)
-		if err != nil {
-			log.Warn().Err(err).Str("name", td.Name).Msg("Failed to propagate initial position, skipping satellite")
-			continue
-		}
-		sat.Latitude = lat
-		sat.Longitude = lng
-		sat.Altitude = alt
-
-		// Calculate velocity
-		vel, err := CalculateVelocity(td, now)
-		if err != nil {
-			sat.Velocity = 0
-		} else {
-			sat.Velocity = vel
-		}
-
-		s.satellites[sat.ID] = sat
-		loaded++
+	for id, sat := range loadedSatellites {
+		s.satellites[id] = sat
 	}
 
 	log.Info().Int("count", loaded).Msg("Satellites loaded from TLE data")
@@ -108,55 +58,7 @@ func (s *SatelliteService) LoadFromTLE(tleData []models.TLEData) error {
 // Unlike LoadFromTLE this doesn't accumulate — it swaps the whole map at once.
 func (s *SatelliteService) ReplaceFromTLE(tleData []models.TLEData) error {
 	now := time.Now().UTC()
-	newMap := make(map[string]*models.Satellite)
-	loaded := 0
-
-	for _, td := range tleData {
-		noradID, err := tle.ExtractNoradID(td.Line1)
-		if err != nil {
-			continue
-		}
-
-		intlDesig := tle.ExtractIntlDesignator(td.Line1)
-		periodMinutes, inclination, eccentricity := ExtractOrbitalParams(td)
-		orbitType := DetermineOrbitType(periodMinutes, eccentricity)
-		country := DetermineCountry(td.Name, intlDesig)
-		purpose := determinePurpose(td.Name)
-
-		epoch := ""
-		if len(td.Line1) >= 32 {
-			epoch = strings.TrimSpace(td.Line1[18:32])
-		}
-
-		sat := &models.Satellite{
-			ID:          uuid.New().String(),
-			Name:        td.Name,
-			NoradID:     noradID,
-			Country:     country,
-			OrbitType:   orbitType,
-			Purpose:     purpose,
-			Period:      periodMinutes,
-			Inclination: inclination,
-			Epoch:       epoch,
-			TLE:         td,
-		}
-
-		lat, lng, alt, err := Propagate(td, now)
-		if err != nil {
-			continue
-		}
-		sat.Latitude = lat
-		sat.Longitude = lng
-		sat.Altitude = alt
-
-		vel, err := CalculateVelocity(td, now)
-		if err == nil {
-			sat.Velocity = vel
-		}
-
-		newMap[sat.ID] = sat
-		loaded++
-	}
+	newMap, loaded := s.buildSatellites(tleData, now)
 
 	s.mu.Lock()
 	s.satellites = newMap

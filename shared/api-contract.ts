@@ -6,6 +6,8 @@ export interface Satellite {
   name: string;
   noradId: number;
   country: string;
+  ownerCode: string;
+  ownerName: string;
   orbitType: 'LEO' | 'MEO' | 'GEO' | 'HEO';
   purpose: string;
   latitude: number;
@@ -59,6 +61,8 @@ export interface TrackedSatellite {
   noradId: number;
   orbitType: string;
   country: string;
+  ownerCode: string;
+  ownerName: string;
   purpose: string;
 }
 

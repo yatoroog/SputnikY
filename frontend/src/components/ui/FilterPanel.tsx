@@ -17,10 +17,23 @@ const ORBIT_TYPES = [
 const COUNTRY_LABELS: Record<string, string> = {
   USA: '\u0421\u0428\u0410',
   Russia: '\u0420\u043E\u0441\u0441\u0438\u044F',
+  'Russia/CIS': '\u0420\u043E\u0441\u0441\u0438\u044F / \u0421\u041D\u0413',
   China: '\u041A\u0438\u0442\u0430\u0439',
+  ESA: 'ESA',
+  EUMETSAT: 'EUMETSAT',
+  EUTELSAT: 'EUTELSAT',
   Europe: '\u0415\u0432\u0440\u043E\u043F\u0430',
   India: '\u0418\u043D\u0434\u0438\u044F',
   Japan: '\u042F\u043F\u043E\u043D\u0438\u044F',
+  'South Korea': '\u042E\u0436\u043D\u0430\u044F \u041A\u043E\u0440\u0435\u044F',
+  Taiwan: '\u0422\u0430\u0439\u0432\u0430\u043D\u044C',
+  'United Kingdom': '\u0412\u0435\u043B\u0438\u043A\u043E\u0431\u0440\u0438\u0442\u0430\u043D\u0438\u044F',
+  ORBCOMM: 'ORBCOMM',
+  Iridium: 'Iridium',
+  Globalstar: 'Globalstar',
+  SES: 'SES',
+  O3b: 'O3b',
+  UAE: '\u041E\u0410\u042D',
   International: '\u041C\u0435\u0436\u0434\u0443\u043D\u0430\u0440\u043E\u0434\u043D\u044B\u0435',
   Unknown: '\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E',
 };
@@ -76,7 +89,7 @@ export default function FilterPanel() {
     return buildSelectOptions(
       countryValues,
       country,
-      '\u0412\u0441\u0435 \u0441\u0442\u0440\u0430\u043d\u044b',
+      '\u0412\u0441\u0435 \u0432\u043b\u0430\u0434\u0435\u043b\u044c\u0446\u044b / \u0441\u0442\u0440\u0430\u043d\u044b',
       COUNTRY_LABELS
     );
   }, [country, filterFacets, satellites]);
@@ -127,7 +140,7 @@ export default function FilterPanel() {
       {/* Country dropdown */}
       <div>
         <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.28em] text-[#637196]">
-          {'Страна'}
+          {'Владелец / страна'}
         </p>
         <div className="premium-field rounded-2xl">
           <select

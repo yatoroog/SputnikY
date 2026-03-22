@@ -275,8 +275,8 @@ export default function NotificationCenter() {
                   value={activeNotification.satellite.orbitType || 'Не указана'}
                 />
                 <DetailRow
-                  label="Страна"
-                  value={activeNotification.satellite.country || 'Unknown'}
+                  label="Владелец / страна"
+                  value={activeNotification.satellite.country || 'Неизвестно'}
                 />
                 <DetailRow
                   label="Назначение"

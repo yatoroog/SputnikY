@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/satellite-tracker/backend/internal/api"
+	"github.com/satellite-tracker/backend/internal/celestrak"
 	"github.com/satellite-tracker/backend/internal/models"
 	"github.com/satellite-tracker/backend/internal/n2yo"
 	"github.com/satellite-tracker/backend/internal/satellite"
@@ -34,7 +35,7 @@ func main() {
 	}
 
 	// Initialize satellite service
-	service := satellite.NewService()
+	service := satellite.NewService(celestrak.NewClient())
 
 	// --- Load satellites: try N2YO API first, fall back to local TLE (~500 sats) ---
 	n2yoKey := strings.TrimSpace(os.Getenv("N2YO_API_KEY"))
