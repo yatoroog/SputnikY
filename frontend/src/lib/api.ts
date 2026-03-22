@@ -3,6 +3,8 @@ import type {
   OrbitPoint,
   Pass,
   AreaPass,
+  PassTrackPoint,
+  Conjunction,
   SatelliteApproach,
   SatelliteApproachesResponse,
   AreaSatelliteApproach,
@@ -404,6 +406,11 @@ type AreaPassWire = {
   los?: number;
   max_elevation?: number;
   duration?: number;
+  aos_azimuth?: number;
+  los_azimuth?: number;
+  tca?: number;
+  tca_azimuth?: number;
+  tca_elevation?: number;
 };
 
 type AreaPassesResponse = {
@@ -427,7 +434,72 @@ export async function fetchAreaPasses(lat: number, lng: number, hours: number = 
     los: p.los ?? 0,
     maxElevation: p.max_elevation ?? 0,
     duration: p.duration ?? 0,
+    aosAzimuth: p.aos_azimuth ?? 0,
+    losAzimuth: p.los_azimuth ?? 0,
+    tca: p.tca ?? 0,
+    tcaAzimuth: p.tca_azimuth ?? 0,
+    tcaElevation: p.tca_elevation ?? 0,
   }));
+}
+
+type ConjunctionWire = {
+  satellite1_id?: string;
+  satellite1_name?: string;
+  satellite2_id?: string;
+  satellite2_name?: string;
+  closest_at?: number;
+  min_distance_km?: number;
+  sat1_lat?: number;
+  sat1_lng?: number;
+  sat1_alt?: number;
+  sat2_lat?: number;
+  sat2_lng?: number;
+  sat2_alt?: number;
+};
+
+type ConjunctionsResponse = {
+  satellite_id: string;
+  satellite_name: string;
+  hours: number;
+  threshold_km: number;
+  conjunctions: ConjunctionWire[];
+};
+
+export async function fetchConjunctions(
+  id: string,
+  hours: number = 24,
+  thresholdKm: number = 50
+): Promise<Conjunction[]> {
+  const data = await request<ConjunctionsResponse>(
+    `/api/conjunctions?id=${encodeURIComponent(id)}&hours=${hours}&threshold_km=${thresholdKm}`
+  );
+  return (data.conjunctions ?? []).map((c) => ({
+    satellite1Id: c.satellite1_id ?? '',
+    satellite1Name: c.satellite1_name ?? '',
+    satellite2Id: c.satellite2_id ?? '',
+    satellite2Name: c.satellite2_name ?? '',
+    closestAt: c.closest_at ?? 0,
+    minDistanceKm: c.min_distance_km ?? 0,
+    sat1Lat: c.sat1_lat ?? 0,
+    sat1Lng: c.sat1_lng ?? 0,
+    sat1Alt: c.sat1_alt ?? 0,
+    sat2Lat: c.sat2_lat ?? 0,
+    sat2Lng: c.sat2_lng ?? 0,
+    sat2Alt: c.sat2_alt ?? 0,
+  }));
+}
+
+export async function fetchPassTrack(
+  id: string,
+  lat: number,
+  lng: number,
+  aos: number,
+  los: number
+): Promise<PassTrackPoint[]> {
+  const data = await request<{ satellite_id: string; points: PassTrackPoint[] }>(
+    `/api/passes/track?id=${encodeURIComponent(id)}&lat=${lat}&lng=${lng}&aos=${aos}&los=${los}`
+  );
+  return data.points ?? [];
 }
 
 export async function fetchSatelliteApproaches(
@@ -476,7 +548,10 @@ export async function fetchAreaSatelliteApproaches(
 
 export async function uploadTLE(file: File): Promise<SatelliteCatalog> {
   const rawTle = await file.text();
+  return uploadTLEText(rawTle);
+}
 
+export async function uploadTLEText(rawTle: string): Promise<SatelliteCatalog> {
   await request<{ message: string; count: number }>('/api/tle/upload', {
     method: 'POST',
     headers: {

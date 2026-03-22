@@ -229,6 +229,60 @@ func (h *Handlers) GetPasses(c *fiber.Ctx) error {
 	})
 }
 
+// GetPassTrack returns the detailed look-angle track for a single satellite pass.
+// GET /api/passes/track
+// Required query params: id, lat, lng, aos, los
+func (h *Handlers) GetPassTrack(c *fiber.Ctx) error {
+	id := c.Query("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing satellite ID (id parameter)",
+		})
+	}
+
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	aosStr := c.Query("aos")
+	losStr := c.Query("los")
+	if latStr == "" || lngStr == "" || aosStr == "" || losStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing required parameters (lat, lng, aos, los)",
+		})
+	}
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid latitude"})
+	}
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil || lng < -180 || lng > 180 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid longitude"})
+	}
+	aos, err := strconv.ParseInt(aosStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid aos"})
+	}
+	los, err := strconv.ParseInt(losStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid los"})
+	}
+
+	s, err := h.service.GetByID(id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	points, err := satellite.CalculatePassTrack(s.TLE, lat, lng, 0, aos, los)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to calculate pass track"})
+	}
+
+	return c.JSON(fiber.Map{
+		"satellite_id": id,
+		"points":       points,
+	})
+}
+
 // GetAreaPasses predicts satellite passes over a map location for ALL satellites.
 // GET /api/passes/area
 // Required query params: lat, lng
@@ -312,6 +366,11 @@ func (h *Handlers) GetAreaPasses(c *fiber.Ctx) error {
 				"los":            p.LOS,
 				"max_elevation":  p.MaxElevation,
 				"duration":       p.Duration,
+				"aos_azimuth":    p.AOSAzimuth,
+				"los_azimuth":    p.LOSAzimuth,
+				"tca":            p.TCA,
+				"tca_azimuth":    p.TCAAzimuth,
+				"tca_elevation":  p.TCAElevation,
 			})
 		}
 	}
@@ -585,6 +644,52 @@ func (h *Handlers) GetAreaSatelliteApproaches(c *fiber.Ctx) error {
 		"hours":             hours,
 		"notify_before_min": notifyBeforeMinutes,
 		"approaches":        allEvents,
+	})
+}
+
+// GetConjunctions predicts close approaches between a satellite and all others.
+// GET /api/conjunctions
+// Required query params: id
+// Optional query params: hours (default 24, max 48), threshold_km (default 50)
+func (h *Handlers) GetConjunctions(c *fiber.Ctx) error {
+	id := c.Query("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing satellite ID (id parameter)",
+		})
+	}
+
+	target, err := h.service.GetByID(id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	hours := c.QueryInt("hours", 24)
+	if hours < 1 || hours > 48 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hours must be between 1 and 48",
+		})
+	}
+
+	thresholdKm := c.QueryFloat("threshold_km", 50)
+	if thresholdKm <= 0 || thresholdKm > 500 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "threshold_km must be between 0 and 500",
+		})
+	}
+
+	allSats := h.service.GetAll(models.FilterParams{})
+
+	conjunctions := satellite.CalculateConjunctions(*target, allSats, time.Now().UTC(), hours, thresholdKm, thresholdKm*2)
+
+	return c.JSON(fiber.Map{
+		"satellite_id":   id,
+		"satellite_name": target.Name,
+		"hours":          hours,
+		"threshold_km":   thresholdKm,
+		"conjunctions":   conjunctions,
 	})
 }
 

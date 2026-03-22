@@ -22,9 +22,11 @@ func SetupRoutes(app *fiber.App, service *satellite.SatelliteService, hub *ws.Hu
 
 	// Pass predictions
 	api.Get("/passes", handlers.GetPasses)
+	api.Get("/passes/track", handlers.GetPassTrack)
 	api.Get("/passes/area", handlers.GetAreaPasses)
 	api.Get("/approaches", handlers.GetSatelliteApproaches)
 	api.Get("/approaches/area", handlers.GetAreaSatelliteApproaches)
+	api.Get("/conjunctions", handlers.GetConjunctions)
 
 	// TLE management
 	api.Post("/tle/upload", handlers.UploadTLE)

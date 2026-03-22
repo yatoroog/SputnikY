@@ -53,7 +53,7 @@ type Client struct {
 func NewClient() *Client {
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 10 * time.Second,
 		},
 		launchCache:  make(map[string]map[int]models.CatalogMetadata),
 		metadataByID: make(map[int]models.CatalogMetadata),

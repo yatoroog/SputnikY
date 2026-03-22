@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
-import { uploadTLE, fetchPresets, loadPreset } from '@/lib/api';
+import { Upload, Check, AlertCircle, Loader2, ClipboardPaste } from 'lucide-react';
+import { uploadTLE, uploadTLEText, fetchPresets, loadPreset } from '@/lib/api';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { cn } from '@/lib/utils';
 import type { FilterFacets, Satellite } from '@/types';
@@ -22,6 +22,43 @@ function deriveFilterFacets(satellites: Satellite[]): FilterFacets {
   };
 }
 
+function validateTLELine(line: string, lineNum: 1 | 2): string | null {
+  if (line.length < 69) return `Строка ${lineNum} TLE слишком короткая (${line.length} символов, нужно 69)`;
+  if (line[0] !== String(lineNum)) return `Строка ${lineNum} TLE должна начинаться с "${lineNum}"`;
+  return null;
+}
+
+function validateTLEText(text: string): { valid: boolean; error?: string; count: number } {
+  const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return { valid: false, error: 'Минимум 2 строки TLE данных', count: 0 };
+
+  let count = 0;
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].startsWith('1 ') || lines[i].startsWith('2 ')) {
+      // Two-line format without name
+      if (i + 1 >= lines.length) return { valid: false, error: `Неполная пара TLE на строке ${i + 1}`, count };
+      const err1 = validateTLELine(lines[i], 1);
+      if (err1) return { valid: false, error: err1, count };
+      const err2 = validateTLELine(lines[i + 1], 2);
+      if (err2) return { valid: false, error: err2, count };
+      count++;
+      i += 2;
+    } else {
+      // Three-line format: name + line1 + line2
+      if (i + 2 >= lines.length) return { valid: false, error: `Неполный TLE блок на строке ${i + 1}`, count };
+      const err1 = validateTLELine(lines[i + 1], 1);
+      if (err1) return { valid: false, error: err1, count };
+      const err2 = validateTLELine(lines[i + 2], 2);
+      if (err2) return { valid: false, error: err2, count };
+      count++;
+      i += 3;
+    }
+  }
+
+  return { valid: true, count };
+}
+
 export default function TleUploader() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -29,6 +66,8 @@ export default function TleUploader() {
   const [error, setError] = useState<string | null>(null);
   const [presets, setPresets] = useState<string[]>([]);
   const [presetsLoading, setPresetsLoading] = useState(false);
+  const [tleText, setTleText] = useState('');
+  const [tleValidation, setTleValidation] = useState<{ valid: boolean; error?: string; count: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setSatellites = useSatelliteStore((state) => state.setSatellites);
   const setCatalogStatus = useSatelliteStore((state) => state.setCatalogStatus);
@@ -121,6 +160,45 @@ export default function TleUploader() {
     [handleFile]
   );
 
+  const handleTleTextChange = useCallback((text: string) => {
+    setTleText(text);
+    if (text.trim().length === 0) {
+      setTleValidation(null);
+      return;
+    }
+    setTleValidation(validateTLEText(text));
+  }, []);
+
+  const handleTleTextSubmit = useCallback(async () => {
+    if (!tleText.trim() || !tleValidation?.valid) return;
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const catalog = await uploadTLEText(tleText.trim());
+      setSatellites(catalog.satellites);
+      setCatalogStatus(catalog.catalogStatus);
+      setFilterFacets(
+        hasFilterFacets(catalog.filterFacets)
+          ? catalog.filterFacets
+          : deriveFilterFacets(catalog.satellites)
+      );
+      setSuccess(`Загружено ${catalog.satellites.length} спутников`);
+      setTleText('');
+      setTleValidation(null);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Ошибка загрузки TLE данных';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [tleText, tleValidation, setSatellites, setCatalogStatus, setFilterFacets]);
+
   const handlePresetLoad = useCallback(
     async (name: string) => {
       if (!name) return;
@@ -188,6 +266,46 @@ export default function TleUploader() {
             ? 'Загрузка...'
             : 'Перетащите TLE файл или нажмите'}
         </p>
+      </div>
+
+      {/* Manual TLE input */}
+      <div>
+        <p className="text-[11px] text-[#637196] mb-2 font-medium flex items-center gap-1.5">
+          <ClipboardPaste size={12} />
+          {'Вставить TLE вручную'}
+        </p>
+        <textarea
+          value={tleText}
+          onChange={(e) => handleTleTextChange(e.target.value)}
+          placeholder={'ISS (ZARYA)\n1 25544U 98067A   24...\n2 25544  51.6416...'}
+          disabled={loading}
+          rows={4}
+          className="w-full premium-field rounded-2xl py-2.5 px-3.5 text-xs text-[#eef2ff] font-mono focus:outline-none resize-none placeholder:text-[#3a4565] disabled:opacity-40"
+        />
+        {tleValidation && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            {tleValidation.valid ? (
+              <span className="text-[10px] text-emerald-400">
+                {tleValidation.count} {tleValidation.count === 1 ? 'спутник' : tleValidation.count < 5 ? 'спутника' : 'спутников'} распознано
+              </span>
+            ) : (
+              <span className="text-[10px] text-red-400">{tleValidation.error}</span>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleTleTextSubmit}
+          disabled={loading || !tleValidation?.valid}
+          className={cn(
+            'mt-2 w-full rounded-2xl py-2 px-3 text-xs font-medium uppercase tracking-wider transition-all duration-300',
+            tleValidation?.valid
+              ? 'bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/25'
+              : 'bg-white/5 border border-white/10 text-[#4a5578] cursor-not-allowed'
+          )}
+        >
+          {loading ? 'Загрузка...' : 'Добавить на карту'}
+        </button>
       </div>
 
       {/* Presets */}

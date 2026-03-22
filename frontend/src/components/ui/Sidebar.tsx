@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -103,9 +103,17 @@ export default function Sidebar({ className }: SidebarProps) {
     setCollapsed((prev) => !prev);
   }, []);
 
+  const uploaderRef = useRef<HTMLDivElement>(null);
+
   const toggleUploader = useCallback(() => {
     setShowUploader((prev) => !prev);
   }, []);
+
+  useEffect(() => {
+    if (showUploader && uploaderRef.current) {
+      uploaderRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showUploader]);
 
   if (collapsed) {
     return (
@@ -179,8 +187,13 @@ export default function Sidebar({ className }: SidebarProps) {
           <div className="flex items-center gap-2">
             <button
               onClick={toggleUploader}
-              className="premium-icon-button flex h-10 w-10 items-center justify-center rounded-2xl text-[#7f8ca7] transition-all duration-300 hover:-translate-y-0.5 hover:text-accent-cyan"
-              title="TLE"
+              className={cn(
+                'flex h-10 w-10 items-center justify-center rounded-2xl transition-all duration-300 hover:-translate-y-0.5',
+                showUploader
+                  ? 'bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan'
+                  : 'premium-icon-button text-[#7f8ca7] hover:text-accent-cyan'
+              )}
+              title={showUploader ? 'Скрыть загрузку TLE' : 'Загрузка TLE'}
             >
               <svg
                 width="16"
@@ -235,7 +248,7 @@ export default function Sidebar({ className }: SidebarProps) {
           {showUploader && (
             <>
               <div className="mx-5 h-px glass-divider-h" />
-              <div className="px-4 py-4">
+              <div ref={uploaderRef} className="px-4 py-4">
                 <TleUploader />
               </div>
             </>

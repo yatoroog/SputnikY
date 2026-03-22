@@ -16,6 +16,7 @@ interface SatelliteStore {
   loading: boolean;
   error: string | null;
   isCloseUp: boolean;
+  groundViewLocation: { lat: number; lng: number } | null;
 
   clickedLocation: { lat: number; lng: number } | null;
   areaPasses: AreaPass[];
@@ -29,6 +30,7 @@ interface SatelliteStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setCloseUp: (v: boolean) => void;
+  setGroundViewLocation: (location: { lat: number; lng: number } | null) => void;
 
   setClickedLocation: (location: { lat: number; lng: number } | null) => void;
   setAreaPasses: (passes: AreaPass[]) => void;
@@ -73,6 +75,7 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   loading: false,
   error: null,
   isCloseUp: false,
+  groundViewLocation: null,
 
   clickedLocation: null,
   areaPasses: [],
@@ -155,6 +158,8 @@ export const useSatelliteStore = create<SatelliteStore>()((set) => ({
   setError: (error: string | null) => set({ error }),
 
   setCloseUp: (v: boolean) => set({ isCloseUp: v }),
+
+  setGroundViewLocation: (location) => set({ groundViewLocation: location }),
 
   setClickedLocation: (location) =>
     set({ clickedLocation: location, selectedSatellite: null }),

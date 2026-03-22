@@ -342,6 +342,8 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
   const lastFrameMsRef = useRef(performance.now());
   const lastStoreTimeMsRef = useRef(0);
   const lastStoreWallMsRef = useRef(performance.now());
+  const groundViewActiveRef = useRef(false);
+  const groundViewEntitiesRef = useRef<Map<string, InstanceType<typeof import('cesium').Entity>>>(new Map());
 
   const [viewerState, setViewerState] = useState<'initializing' | 'ready' | 'error'>('initializing');
   const [viewerError, setViewerError] = useState<string | null>(null);
@@ -898,6 +900,17 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
         );
       });
 
+      // Update ground view model positions
+      if (groundViewActiveRef.current && groundViewEntitiesRef.current.size > 0) {
+        groundViewEntitiesRef.current.forEach((entity, id) => {
+          const motion = pointMotionRef.current.get(id);
+          if (!motion) return;
+          const pos = getMotionPosition(motion, nowMs);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (entity as any).position = activeCesium.Cartesian3.fromDegrees(pos.lng, pos.lat, pos.altKm * 1000);
+        });
+      }
+
       const selectedId = selectedSatelliteRef.current?.id ?? null;
       if (selectedId && labelRef.current) {
         const motion = pointMotionRef.current.get(selectedId);
@@ -1419,6 +1432,136 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     });
 
     return unsubscribe;
+  }, []);
+
+  // Ground Observer View — 3D satellite models
+  useEffect(() => {
+    const unsubscribe = useSatelliteStore.subscribe((state, prev) => {
+      const viewer = viewerRef.current;
+      const Cesium = cesiumRef.current;
+      if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+      const loc = state.groundViewLocation;
+      const prevLoc = prev.groundViewLocation;
+
+      if (loc && (!prevLoc || loc.lat !== prevLoc.lat || loc.lng !== prevLoc.lng)) {
+        // Enter ground observer view
+
+        // Hide point primitives
+        if (pointCollectionRef.current) {
+          pointCollectionRef.current.show = false;
+        }
+
+        // Remove any prior ground view entities
+        groundViewEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+        groundViewEntitiesRef.current.clear();
+
+        // Create 3D model entities for each satellite
+        const nowMs = performance.now();
+        const sats = satellitesRef.current;
+
+        for (const sat of sats) {
+          const motion = pointMotionRef.current.get(sat.id);
+          const pos = motion
+            ? getMotionPosition(motion, nowMs)
+            : { lat: sat.latitude, lng: sat.longitude, altKm: sat.altitude };
+
+          if (!hasRenderableCoordinates(pos.lat, pos.lng, pos.altKm)) continue;
+
+          const orbitColor = Cesium.Color.fromCssColorString(getOrbitPointColor(sat.orbitType));
+
+          const entity = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(pos.lng, pos.lat, pos.altKm * 1000),
+            model: {
+              uri: '/satellite.glb',
+              scale: 3000,
+              minimumPixelSize: 0,
+              maximumScale: 50000,
+              color: orbitColor.withAlpha(0.95),
+              colorBlendMode: Cesium.ColorBlendMode.MIX,
+              colorBlendAmount: 0.4,
+              silhouetteColor: orbitColor,
+              silhouetteSize: 1.5,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 10_000_000),
+            },
+            label: {
+              text: sat.name,
+              font: '11px sans-serif',
+              fillColor: Cesium.Color.WHITE.withAlpha(0.9),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -15),
+              scaleByDistance: new Cesium.NearFarScalar(200_000, 1.0, 8_000_000, 0.2),
+              translucencyByDistance: new Cesium.NearFarScalar(200_000, 1.0, 8_000_000, 0.0),
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5_000_000),
+            },
+          });
+
+          groundViewEntitiesRef.current.set(sat.id, entity);
+        }
+
+        groundViewActiveRef.current = true;
+
+        // Camera setup
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 1;
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(loc.lng, loc.lat, 10),
+          orientation: {
+            heading: Cesium.Math.toRadians(0),
+            pitch: Cesium.Math.toRadians(-5),
+            roll: 0,
+          },
+          duration: 2,
+        });
+      } else if (!loc && prevLoc) {
+        // Exit ground observer view
+
+        groundViewActiveRef.current = false;
+
+        // Remove model entities
+        groundViewEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+        groundViewEntitiesRef.current.clear();
+
+        // Show point primitives again
+        if (pointCollectionRef.current) {
+          pointCollectionRef.current.show = true;
+        }
+
+        // Restore camera
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 7_500_000;
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(prevLoc.lng, prevLoc.lat, INITIAL_CAMERA_RANGE_METERS),
+          orientation: {
+            heading: 0,
+            pitch: Cesium.Math.toRadians(-90),
+            roll: 0,
+          },
+          duration: 2,
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      // Clean up on unmount
+      const viewer = viewerRef.current;
+      if (viewer && !viewer.isDestroyed()) {
+        groundViewEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+      }
+      groundViewEntitiesRef.current.clear();
+      groundViewActiveRef.current = false;
+    };
   }, []);
 
   return (

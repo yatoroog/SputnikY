@@ -1,6 +1,7 @@
 package celestrak
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/satellite-tracker/backend/internal/models"
 	"github.com/satellite-tracker/backend/internal/tle"
@@ -258,7 +260,11 @@ func (c *Client) fetchCatalogMetadataByNorad(noradID int) (models.CatalogMetadat
 }
 
 // ResolveCatalogMetadata enriches TLE data with owner metadata resolved from CelesTrak SATCAT.
+// The entire operation is bounded by a 30-second deadline so the server never hangs on startup.
 func (c *Client) ResolveCatalogMetadata(tleData []models.TLEData) (map[int]models.CatalogMetadata, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	resolved := make(map[int]models.CatalogMetadata, len(tleData))
 	launchesToFetch := make(map[string]struct{})
 
@@ -308,7 +314,11 @@ func (c *Client) ResolveCatalogMetadata(tleData []models.TLEData) (map[int]model
 		go func(currentLaunchID string) {
 			defer wg.Done()
 
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			metadata, err := c.fetchLaunchMetadata(currentLaunchID)
@@ -354,7 +364,11 @@ func (c *Client) ResolveCatalogMetadata(tleData []models.TLEData) (map[int]model
 		go func(currentNoradID int) {
 			defer wg.Done()
 
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			metadata, err := c.fetchCatalogMetadataByNorad(currentNoradID)

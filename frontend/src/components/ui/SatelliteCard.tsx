@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback } from 'react';
-import { X, Globe, MapPin, Gauge, Clock, Compass, Navigation, Crosshair } from 'lucide-react';
+import { useCallback, useState, useEffect } from 'react';
+import { X, Globe, MapPin, Gauge, Clock, Compass, Navigation, Crosshair, ShieldAlert, Loader2 } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
+import { fetchConjunctions } from '@/lib/api';
 import {
   cn,
   formatCoordinate,
@@ -11,6 +12,7 @@ import {
   getOrbitTypeColor,
   getOrbitTypeLabel,
 } from '@/lib/utils';
+import type { Conjunction } from '@/types';
 
 interface SatelliteCardProps {
   className?: string;
@@ -21,10 +23,32 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const isCloseUp = useSatelliteStore((state) => state.isCloseUp);
   const setCloseUp = useSatelliteStore((state) => state.setCloseUp);
+  const [conjunctions, setConjunctions] = useState<Conjunction[]>([]);
+  const [conjLoading, setConjLoading] = useState(false);
+  const [showConj, setShowConj] = useState(false);
 
   const handleClose = useCallback(() => {
     selectSatellite(null);
   }, [selectSatellite]);
+
+  useEffect(() => {
+    setConjunctions([]);
+    setShowConj(false);
+  }, [selectedSatellite?.id]);
+
+  const loadConjunctions = useCallback(async () => {
+    if (!selectedSatellite) return;
+    setShowConj(true);
+    setConjLoading(true);
+    try {
+      const data = await fetchConjunctions(selectedSatellite.id, 24, 50);
+      setConjunctions(data);
+    } catch {
+      setConjunctions([]);
+    } finally {
+      setConjLoading(false);
+    }
+  }, [selectedSatellite]);
 
   if (!selectedSatellite) return null;
 
@@ -34,40 +58,45 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
   const params = [
     {
       icon: Globe,
-      label: '\u0412\u043B\u0430\u0434\u0435\u043B\u0435\u0446 / \u0441\u0442\u0440\u0430\u043D\u0430',
-      value: sat.country || '\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E',
+      label: 'Владелец / страна',
+      value: sat.country || 'Неизвестно',
     },
     {
       icon: Navigation,
-      label: '\u0422\u0438\u043F \u043E\u0440\u0431\u0438\u0442\u044B',
+      label: 'Тип орбиты',
       value: getOrbitTypeLabel(sat.orbitType),
     },
     {
       icon: MapPin,
-      label: '\u0412\u044B\u0441\u043E\u0442\u0430',
+      label: 'Высота',
       value: formatAltitude(sat.altitude),
     },
     {
       icon: Clock,
-      label: '\u041F\u0435\u0440\u0438\u043E\u0434',
+      label: 'Период',
       value: formatPeriod(sat.period),
     },
     {
       icon: Compass,
-      label: '\u041D\u0430\u043A\u043B\u043E\u043D\u0435\u043D\u0438\u0435',
-      value: `${sat.inclination.toFixed(1)}\u00B0`,
+      label: 'Наклонение',
+      value: `${sat.inclination.toFixed(1)}°`,
     },
     {
       icon: MapPin,
-      label: '\u041A\u043E\u043E\u0440\u0434\u0438\u043D\u0430\u0442\u044B',
+      label: 'Координаты',
       value: formatCoordinate(sat.latitude, sat.longitude),
     },
     {
       icon: Gauge,
-      label: '\u0421\u043A\u043E\u0440\u043E\u0441\u0442\u044C',
-      value: `${sat.velocity.toFixed(1)} \u043A\u043C/\u0441`,
+      label: 'Скорость',
+      value: `${sat.velocity.toFixed(1)} км/с`,
     },
   ];
+
+  const formatDateTime = (ts: number) => {
+    const d = new Date(ts * 1000);
+    return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div
@@ -108,7 +137,7 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
 
         {sat.purpose && (
           <p className="text-xs text-[#94a3c0] mt-3">
-            {'\u041D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435: '}{sat.purpose}
+            {'Назначение: '}{sat.purpose}
           </p>
         )}
       </div>
@@ -117,7 +146,7 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
 
       <div className="p-5">
         <h3 className="text-[11px] text-[#637196] uppercase tracking-[0.24em] mb-4">
-          {'\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B'}
+          Параметры
         </h3>
         <div className="space-y-3.5">
           {params.map((param) => {
@@ -135,6 +164,66 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
             );
           })}
         </div>
+      </div>
+
+      <div className="mx-5 h-px glass-divider-h" />
+
+      {/* Conjunction Detection */}
+      <div className="p-5">
+        {!showConj ? (
+          <button
+            type="button"
+            onClick={loadConjunctions}
+            className="flex w-full items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/[0.08] transition-all duration-300"
+          >
+            <ShieldAlert size={14} className="text-[#637196]" />
+            <span className="text-xs font-medium uppercase tracking-wider text-[#94a3c0]">
+              Проверить сближения
+            </span>
+          </button>
+        ) : conjLoading ? (
+          <div className="flex items-center justify-center gap-2 py-3">
+            <Loader2 size={16} className="text-accent-cyan animate-spin" />
+            <span className="text-xs text-[#637196]">Анализ сближений (24ч)...</span>
+          </div>
+        ) : conjunctions.length === 0 ? (
+          <div className="text-center py-2">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-400">
+              <ShieldAlert size={13} />
+              <span>Сближений не обнаружено (24ч, &lt;50 км)</span>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-1.5 mb-3">
+              <ShieldAlert size={13} className="text-amber-400" />
+              <span className="text-[11px] uppercase tracking-wider text-amber-400 font-medium">
+                {conjunctions.length} {conjunctions.length === 1 ? 'сближение' : conjunctions.length < 5 ? 'сближения' : 'сближений'}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {conjunctions.slice(0, 5).map((conj, i) => (
+                <div
+                  key={`${conj.satellite2Id}-${conj.closestAt}-${i}`}
+                  className="glass-surface rounded-xl p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-[#eef2ff] truncate">{conj.satellite2Name}</span>
+                    <span className={cn(
+                      'text-[10px] font-semibold',
+                      conj.minDistanceKm < 10 ? 'text-red-400' : conj.minDistanceKm < 25 ? 'text-amber-400' : 'text-yellow-400'
+                    )}>
+                      {conj.minDistanceKm.toFixed(1)} км
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[10px] text-[#4a5578]">
+                    {formatDateTime(conj.closestAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mx-5 h-px glass-divider-h" />
@@ -174,9 +263,7 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
                 isCloseUp ? 'text-accent-cyan' : 'text-[#94a3c0]'
               }`}
             >
-              {isCloseUp
-                ? '\u041E\u0442\u0434\u0430\u043B\u0438\u0442\u044C'
-                : '\u041F\u0440\u0438\u0431\u043B\u0438\u0437\u0438\u0442\u044C'}
+              {isCloseUp ? 'Отдалить' : 'Приблизить'}
             </span>
           </div>
         </button>
