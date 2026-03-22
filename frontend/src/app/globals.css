@@ -129,7 +129,7 @@ button {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  z-index: 1;
+  z-index: -1;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 35%),
     radial-gradient(ellipse at 30% 0%, rgba(6, 182, 212, 0.06), transparent 50%);
@@ -142,7 +142,7 @@ button {
   inset: -1px;
   border-radius: inherit;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
   background: conic-gradient(
     from 180deg,
     var(--prism-start),
@@ -292,7 +292,7 @@ button {
   );
   animation: glass-shimmer 8s ease-in-out infinite;
   pointer-events: none;
-  z-index: 2;
+  z-index: -1;
 }
 
 /* ========================================
