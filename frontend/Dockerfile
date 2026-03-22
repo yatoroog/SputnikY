@@ -5,7 +5,8 @@ FROM base AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Skip optional native tooling such as `canvas`; the app build does not need it.
+RUN npm ci --omit=optional
 
 # Rebuild the source code only when needed
 FROM base AS builder

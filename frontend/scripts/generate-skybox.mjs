@@ -3,10 +3,20 @@
  * with stars, nebulae, and cosmic dust.
  * Outputs PNG files to public/images/skybox/
  */
-import { createCanvas } from 'canvas';
 import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
+let createCanvas;
+
+try {
+  ({ createCanvas } = await import('canvas'));
+} catch {
+  console.error(
+    'This script requires the optional "canvas" package. Install it first with: npm install --save-dev canvas',
+  );
+  process.exit(1);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, '..', 'public', 'images', 'skybox');
