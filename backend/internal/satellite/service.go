@@ -1,14 +1,32 @@
 package satellite
 
 import (
+	"context"
 	"fmt"
-	"github.com/rs/zerolog/log"
-	"github.com/satellite-tracker/backend/internal/models"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
+	"github.com/satellite-tracker/backend/internal/models"
 )
+
+// CatalogStore persists the active catalog and its runtime state.
+type CatalogStore interface {
+	LoadCatalog(ctx context.Context) ([]*models.Satellite, models.CatalogStatus, error)
+	ListSatellites(ctx context.Context, filters models.FilterParams) ([]*models.Satellite, error)
+	GetSatellite(ctx context.Context, id string) (*models.Satellite, error)
+	GetFilterFacets(ctx context.Context) (models.FilterFacets, error)
+	GetCatalogStatus(ctx context.Context) (models.CatalogStatus, error)
+	SaveCatalog(ctx context.Context, satellites []*models.Satellite, status models.CatalogStatus, mode string) error
+	UpdateCatalogNote(ctx context.Context, note string) error
+	UpdateSatellitePositions(
+		ctx context.Context,
+		updates []models.SatellitePositionUpdate,
+		updatedAt time.Time,
+	) error
+}
 
 // SatelliteService manages all tracked satellites and their state.
 type SatelliteService struct {
@@ -16,16 +34,18 @@ type SatelliteService struct {
 	satellites       map[string]*models.Satellite
 	catalogStatus    models.CatalogStatus
 	metadataResolver MetadataResolver
+	store            CatalogStore
 }
 
 // NewService creates a new SatelliteService.
-func NewService(metadataResolver MetadataResolver) *SatelliteService {
+func NewService(metadataResolver MetadataResolver, catalogStore CatalogStore) *SatelliteService {
 	return &SatelliteService{
 		satellites: make(map[string]*models.Satellite),
 		catalogStatus: models.CatalogStatus{
 			Source: models.CatalogSourceUnknown,
 		},
 		metadataResolver: metadataResolver,
+		store:            catalogStore,
 	}
 }
 
@@ -38,38 +58,118 @@ func cloneTimePtr(ts *time.Time) *time.Time {
 	return &value
 }
 
-// LoadFromTLE creates Satellite objects from parsed TLE data and propagates initial positions.
-func (s *SatelliteService) LoadFromTLE(tleData []models.TLEData) error {
-	now := time.Now().UTC()
-	loadedSatellites, loaded := s.buildSatellites(tleData, now)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for id, sat := range loadedSatellites {
-		s.satellites[id] = sat
+// HydrateFromStore restores the latest persisted catalog into the in-memory worker state.
+func (s *SatelliteService) HydrateFromStore(ctx context.Context) (bool, error) {
+	if s.store == nil {
+		return false, nil
 	}
 
-	log.Info().Int("count", loaded).Msg("Satellites loaded from TLE data")
-	return nil
-}
+	satellites, status, err := s.store.LoadCatalog(ctx)
+	if err != nil {
+		return false, fmt.Errorf("load catalog from store: %w", err)
+	}
+	if len(satellites) == 0 {
+		return false, nil
+	}
 
-// ReplaceFromTLE atomically replaces all satellites with freshly parsed TLE data.
-// Unlike LoadFromTLE this doesn't accumulate — it swaps the whole map at once.
-func (s *SatelliteService) ReplaceFromTLE(tleData []models.TLEData) error {
-	now := time.Now().UTC()
-	newMap, loaded := s.buildSatellites(tleData, now)
+	loaded := make(map[string]*models.Satellite, len(satellites))
+	for _, satellite := range satellites {
+		loaded[satellite.ID] = satellite
+	}
 
 	s.mu.Lock()
-	s.satellites = newMap
+	s.satellites = loaded
+	s.catalogStatus = status
 	s.mu.Unlock()
 
-	log.Info().Int("count", loaded).Msg("Satellites replaced from TLE data")
+	log.Info().
+		Int("count", len(satellites)).
+		Str("source", status.Source).
+		Msg("Active catalog restored from PostgreSQL")
+
+	return true, nil
+}
+
+// ImportCatalog builds satellites from TLE data, persists them, and updates the live in-memory catalog.
+func (s *SatelliteService) ImportCatalog(
+	ctx context.Context,
+	tleData []models.TLEData,
+	source string,
+	mode string,
+	note string,
+	syncedAt time.Time,
+) error {
+	if mode != models.CatalogImportModeMerge && mode != models.CatalogImportModeReplace {
+		return fmt.Errorf("unsupported catalog import mode: %s", mode)
+	}
+
+	if syncedAt.IsZero() {
+		syncedAt = time.Now().UTC()
+	} else {
+		syncedAt = syncedAt.UTC()
+	}
+
+	loadedSatellites, loaded := s.buildSatellites(tleData, syncedAt)
+	if loaded == 0 {
+		return fmt.Errorf("no valid satellites could be imported from TLE data")
+	}
+
+	satellites := make([]*models.Satellite, 0, len(loadedSatellites))
+	for _, satellite := range loadedSatellites {
+		satellites = append(satellites, satellite)
+	}
+
+	status := models.CatalogStatus{
+		Source:     source,
+		LastSyncAt: cloneTimePtr(&syncedAt),
+		Note:       note,
+	}
+
+	if s.store != nil {
+		if err := s.store.SaveCatalog(ctx, satellites, status, mode); err != nil {
+			return fmt.Errorf("persist catalog: %w", err)
+		}
+	}
+
+	s.mu.Lock()
+	switch mode {
+	case models.CatalogImportModeReplace:
+		s.satellites = loadedSatellites
+	case models.CatalogImportModeMerge:
+		if s.satellites == nil {
+			s.satellites = make(map[string]*models.Satellite)
+		}
+		for id, satellite := range loadedSatellites {
+			s.satellites[id] = satellite
+		}
+	}
+	s.catalogStatus = status
+	s.mu.Unlock()
+
+	log.Info().
+		Int("count", loaded).
+		Str("source", source).
+		Str("mode", mode).
+		Msg("Satellites imported into active catalog")
+
 	return nil
 }
 
 // GetAll returns all satellites matching the given filters.
-func (s *SatelliteService) GetAll(filters models.FilterParams) []*models.Satellite {
+func (s *SatelliteService) GetAll(ctx context.Context, filters models.FilterParams) []*models.Satellite {
+	if s.store != nil {
+		satellites, err := s.store.ListSatellites(ctx, filters)
+		if err == nil {
+			return satellites
+		}
+
+		log.Warn().Err(err).Msg("Failed to read satellites from PostgreSQL, falling back to memory")
+	}
+
+	return s.getAllFromMemory(filters)
+}
+
+func (s *SatelliteService) getAllFromMemory(filters models.FilterParams) []*models.Satellite {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -83,8 +183,17 @@ func (s *SatelliteService) GetAll(filters models.FilterParams) []*models.Satelli
 	return result
 }
 
-// GetFilterFacets returns unique filter values for the whole in-memory catalog.
-func (s *SatelliteService) GetFilterFacets() models.FilterFacets {
+// GetFilterFacets returns unique filter values for the whole active catalog.
+func (s *SatelliteService) GetFilterFacets(ctx context.Context) models.FilterFacets {
+	if s.store != nil {
+		facets, err := s.store.GetFilterFacets(ctx)
+		if err == nil {
+			return facets
+		}
+
+		log.Warn().Err(err).Msg("Failed to read filter facets from PostgreSQL, falling back to memory")
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -118,8 +227,30 @@ func (s *SatelliteService) GetFilterFacets() models.FilterFacets {
 	}
 }
 
-// GetByID returns a single satellite by its UUID.
-func (s *SatelliteService) GetByID(id string) (*models.Satellite, error) {
+// GetByID returns a single satellite by its ID.
+func (s *SatelliteService) GetByID(ctx context.Context, id string) (*models.Satellite, error) {
+	if s.store != nil {
+		satellite, err := s.store.GetSatellite(ctx, id)
+		if err == nil {
+			return satellite, nil
+		}
+		if strings.Contains(err.Error(), "satellite not found:") {
+			s.mu.RLock()
+			defer s.mu.RUnlock()
+
+			sat, ok := s.satellites[id]
+			if !ok {
+				return nil, err
+			}
+			return sat, nil
+		}
+
+		log.Warn().
+			Err(err).
+			Str("satellite_id", id).
+			Msg("Failed to read satellite from PostgreSQL, falling back to memory")
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -131,19 +262,15 @@ func (s *SatelliteService) GetByID(id string) (*models.Satellite, error) {
 }
 
 // GetOrbit computes the orbital track for a satellite.
-func (s *SatelliteService) GetOrbit(id string, duration time.Duration) ([]models.OrbitPoint, error) {
-	s.mu.RLock()
-	sat, ok := s.satellites[id]
-	s.mu.RUnlock()
-
-	if !ok {
-		return nil, fmt.Errorf("satellite not found: %s", id)
+func (s *SatelliteService) GetOrbit(ctx context.Context, id string, duration time.Duration) ([]models.OrbitPoint, error) {
+	sat, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 
 	now := time.Now().UTC()
-	// Use half duration before and half after now
 	start := now.Add(-duration / 2)
-	steps := int(duration.Minutes()) * 2 // ~30 second resolution
+	steps := int(duration.Minutes()) * 2
 	if steps < 10 {
 		steps = 10
 	}
@@ -157,8 +284,7 @@ func (s *SatelliteService) GetOrbit(id string, duration time.Duration) ([]models
 // UpdatePositions re-propagates all satellites to the given time.
 func (s *SatelliteService) UpdatePositions(t time.Time) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	updates := make([]models.SatellitePositionUpdate, 0, len(s.satellites))
 	for _, sat := range s.satellites {
 		lat, lng, alt, err := Propagate(sat.TLE, t)
 		if err != nil {
@@ -171,6 +297,21 @@ func (s *SatelliteService) UpdatePositions(t time.Time) {
 		vel, err := CalculateVelocity(sat.TLE, t)
 		if err == nil {
 			sat.Velocity = vel
+		}
+
+		updates = append(updates, models.SatellitePositionUpdate{
+			ID:        sat.ID,
+			Latitude:  sat.Latitude,
+			Longitude: sat.Longitude,
+			Altitude:  sat.Altitude,
+			Velocity:  sat.Velocity,
+		})
+	}
+	s.mu.Unlock()
+
+	if s.store != nil {
+		if err := s.store.UpdateSatellitePositions(context.Background(), updates, t.UTC()); err != nil {
+			log.Warn().Err(err).Msg("Failed to persist live satellite positions to PostgreSQL")
 		}
 	}
 }
@@ -192,8 +333,7 @@ func (s *SatelliteService) GetPositions() []models.SatellitePosition {
 	return positions
 }
 
-// GetPositionsAtTime propagates all tracked satellites to the provided moment
-// without mutating the live in-memory state used by the realtime worker.
+// GetPositionsAtTime propagates all tracked satellites to the provided moment without mutating live state.
 func (s *SatelliteService) GetPositionsAtTime(t time.Time) []models.SatellitePosition {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -216,29 +356,30 @@ func (s *SatelliteService) GetPositionsAtTime(t time.Time) []models.SatellitePos
 	return positions
 }
 
-// SetCatalogStatus updates metadata about the last successful catalog load.
-func (s *SatelliteService) SetCatalogStatus(source string, syncedAt time.Time, note string) {
+// UpdateCatalogNote updates the catalog note while preserving the source and last sync timestamp.
+func (s *SatelliteService) UpdateCatalogNote(ctx context.Context, note string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.catalogStatus.Note = note
+	s.mu.Unlock()
 
-	timestamp := syncedAt.UTC()
-	s.catalogStatus = models.CatalogStatus{
-		Source:     source,
-		LastSyncAt: &timestamp,
-		Note:       note,
+	if s.store != nil {
+		if err := s.store.UpdateCatalogNote(ctx, note); err != nil {
+			log.Warn().Err(err).Msg("Failed to persist catalog note to PostgreSQL")
+		}
 	}
 }
 
-// UpdateCatalogNote updates the catalog note while preserving the source and last sync timestamp.
-func (s *SatelliteService) UpdateCatalogNote(note string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.catalogStatus.Note = note
-}
-
 // GetCatalogStatus returns a snapshot of the current catalog metadata.
-func (s *SatelliteService) GetCatalogStatus() models.CatalogStatus {
+func (s *SatelliteService) GetCatalogStatus(ctx context.Context) models.CatalogStatus {
+	if s.store != nil {
+		status, err := s.store.GetCatalogStatus(ctx)
+		if err == nil {
+			return status
+		}
+
+		log.Warn().Err(err).Msg("Failed to read catalog status from PostgreSQL, falling back to memory")
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -247,6 +388,13 @@ func (s *SatelliteService) GetCatalogStatus() models.CatalogStatus {
 		LastSyncAt: cloneTimePtr(s.catalogStatus.LastSyncAt),
 		Note:       s.catalogStatus.Note,
 	}
+}
+
+// Count returns the number of satellites currently loaded into memory for live propagation.
+func (s *SatelliteService) Count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.satellites)
 }
 
 // matchesFilters checks if a satellite matches all non-empty filter criteria.

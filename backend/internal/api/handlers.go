@@ -54,11 +54,12 @@ func (h *Handlers) GetSatellites(c *fiber.Ctx) error {
 		})
 	}
 
-	satellites := h.service.GetAll(filters)
+	ctx := c.UserContext()
+	satellites := h.service.GetAll(ctx, filters)
 	return c.JSON(fiber.Map{
 		"count":          len(satellites),
-		"catalog_status": h.service.GetCatalogStatus(),
-		"filter_facets":  h.service.GetFilterFacets(),
+		"catalog_status": h.service.GetCatalogStatus(ctx),
+		"filter_facets":  h.service.GetFilterFacets(ctx),
 		"satellites":     satellites,
 	})
 }
@@ -100,7 +101,7 @@ func (h *Handlers) GetSatelliteByID(c *fiber.Ctx) error {
 		})
 	}
 
-	sat, err := h.service.GetByID(id)
+	sat, err := h.service.GetByID(c.UserContext(), id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -130,7 +131,7 @@ func (h *Handlers) GetSatelliteOrbit(c *fiber.Ctx) error {
 
 	duration := time.Duration(durationMinutes) * time.Minute
 
-	orbit, err := h.service.GetOrbit(id, duration)
+	orbit, err := h.service.GetOrbit(c.UserContext(), id, duration)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -195,7 +196,7 @@ func (h *Handlers) GetPasses(c *fiber.Ctx) error {
 		})
 	}
 
-	sat, err := h.service.GetByID(id)
+	sat, err := h.service.GetByID(c.UserContext(), id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -267,7 +268,7 @@ func (h *Handlers) GetPassTrack(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid los"})
 	}
 
-	s, err := h.service.GetByID(id)
+	s, err := h.service.GetByID(c.UserContext(), id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -317,7 +318,7 @@ func (h *Handlers) GetAreaPasses(c *fiber.Ctx) error {
 		})
 	}
 
-	allSats := h.service.GetAll(models.FilterParams{})
+	allSats := h.service.GetAll(c.UserContext(), models.FilterParams{})
 	now := time.Now().UTC()
 
 	type passResult struct {
@@ -455,7 +456,7 @@ func (h *Handlers) GetSatelliteApproaches(c *fiber.Ctx) error {
 		})
 	}
 
-	sat, err := h.service.GetByID(id)
+	sat, err := h.service.GetByID(c.UserContext(), id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -554,7 +555,7 @@ func (h *Handlers) GetAreaSatelliteApproaches(c *fiber.Ctx) error {
 		})
 	}
 
-	allSats := h.service.GetAll(models.FilterParams{})
+	allSats := h.service.GetAll(c.UserContext(), models.FilterParams{})
 	now := time.Now().UTC()
 
 	type areaApproachEvent struct {
@@ -659,7 +660,7 @@ func (h *Handlers) GetConjunctions(c *fiber.Ctx) error {
 		})
 	}
 
-	target, err := h.service.GetByID(id)
+	target, err := h.service.GetByID(c.UserContext(), id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -680,7 +681,7 @@ func (h *Handlers) GetConjunctions(c *fiber.Ctx) error {
 		})
 	}
 
-	allSats := h.service.GetAll(models.FilterParams{})
+	allSats := h.service.GetAll(c.UserContext(), models.FilterParams{})
 
 	conjunctions := satellite.CalculateConjunctions(*target, allSats, time.Now().UTC(), hours, thresholdKm, thresholdKm*2)
 
@@ -710,17 +711,19 @@ func (h *Handlers) UploadTLE(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.LoadFromTLE(tleData); err != nil {
+	if err := h.service.ImportCatalog(
+		c.UserContext(),
+		tleData,
+		models.CatalogSourceUploadedTLE,
+		models.CatalogImportModeMerge,
+		"Catalog extended via manual TLE upload.",
+		time.Now().UTC(),
+	); err != nil {
 		log.Error().Err(err).Msg("Failed to load TLE data")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to load satellites from TLE data",
 		})
 	}
-	h.service.SetCatalogStatus(
-		models.CatalogSourceUploadedTLE,
-		time.Now().UTC(),
-		"Catalog extended via manual TLE upload.",
-	)
 
 	log.Info().Int("count", len(tleData)).Msg("TLE data uploaded and loaded")
 
@@ -756,17 +759,19 @@ func (h *Handlers) LoadPreset(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.LoadFromTLE(tleData); err != nil {
+	if err := h.service.ImportCatalog(
+		c.UserContext(),
+		tleData,
+		models.CatalogSourcePreset,
+		models.CatalogImportModeMerge,
+		"Catalog extended via preset load: "+name,
+		time.Now().UTC(),
+	); err != nil {
 		log.Error().Err(err).Str("preset", name).Msg("Failed to load preset")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to load preset",
 		})
 	}
-	h.service.SetCatalogStatus(
-		models.CatalogSourcePreset,
-		time.Now().UTC(),
-		"Catalog extended via preset load: "+name,
-	)
 
 	log.Info().Str("preset", name).Int("count", len(tleData)).Msg("Preset loaded")
 
