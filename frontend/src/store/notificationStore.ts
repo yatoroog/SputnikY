@@ -15,6 +15,36 @@ interface NotificationStore {
   closeNotification: () => void;
 }
 
+function createSafeStorage(): Storage {
+  if (typeof window === 'undefined') {
+    return {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    };
+  }
+
+  try {
+    const storage = window.localStorage;
+    const probeKey = '__sputnikx_storage_probe__';
+    storage.setItem(probeKey, '1');
+    storage.removeItem(probeKey);
+    return storage;
+  } catch {
+    return {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    };
+  }
+}
+
 export const useNotificationStore = create<NotificationStore>()(
   persist(
     (set, get) => ({
@@ -59,7 +89,7 @@ export const useNotificationStore = create<NotificationStore>()(
     }),
     {
       name: 'sputnikx-notifications',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(createSafeStorage),
       partialize: (state) => ({
         notifications: state.notifications,
         seenNotificationIds: state.seenNotificationIds,

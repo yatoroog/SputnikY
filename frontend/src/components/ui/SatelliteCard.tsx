@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { X, Globe, MapPin, Gauge, Clock, Compass, Navigation, Crosshair } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import {
+  cn,
   formatCoordinate,
   formatAltitude,
   formatPeriod,
@@ -11,7 +12,11 @@ import {
   getOrbitTypeLabel,
 } from '@/lib/utils';
 
-export default function SatelliteCard() {
+interface SatelliteCardProps {
+  className?: string;
+}
+
+export default function SatelliteCard({ className }: SatelliteCardProps) {
   const selectedSatellite = useSatelliteStore((state) => state.selectedSatellite);
   const selectSatellite = useSatelliteStore((state) => state.selectSatellite);
   const isCloseUp = useSatelliteStore((state) => state.isCloseUp);
@@ -65,7 +70,12 @@ export default function SatelliteCard() {
   ];
 
   return (
-    <div className="panel-base glass-shimmer w-[360px] h-fit max-h-full overflow-y-auto animate-slide-in-right">
+    <div
+      className={cn(
+        'panel-base glass-shimmer h-fit max-h-full w-[min(360px,calc(100vw-1rem))] overflow-y-auto animate-slide-in-right',
+        className
+      )}
+    >
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
 
       <div className="relative p-5">

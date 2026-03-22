@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
-import type { Satellite, SatellitePosition } from '@/types';
+import type { Satellite, SatellitePosition, OrbitPoint } from '@/types';
+import { fetchOrbit } from '@/lib/api';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
 if (typeof window !== 'undefined') {
@@ -117,88 +118,82 @@ function getMotionPosition(motion: MotionState, nowMs: number): RenderPosition {
   };
 }
 
-function buildOrbitSegments(
+// Цвет траектории
+const ORBIT_TRACK_COLORS = ['#a855f7', '#60a5fa', '#34d399', '#f59e0b', '#f87171'];
+
+/**
+ * Строит замкнутый эллипс орбиты.
+ *
+ * Ключевое отличие от старого подхода:
+ * - Нормаль к плоскости орбиты h = r × v, где v — вектор скорости from→to.
+ * - h стабильна по всей орбите и не меняет знак на полюсах.
+ * - f1 = r (текущая позиция), f2 = h × r (вдоль движения).
+ * - Это даёт правильный замкнутый эллипс без разворота на 180°.
+ *
+ * @param fromLat/fromLng — предыдущая позиция (для вектора скорости)
+ */
+function computeFullOrbitPoints(
   Cesium: typeof import('cesium'),
-  latDeg: number,
-  lngDeg: number,
-  altKm: number,
-  incDeg: number,
-  steps = 360
-): InstanceType<typeof import('cesium').Cartesian3>[][] {
-  const lat = latDeg * (Math.PI / 180);
-  const lng = lngDeg * (Math.PI / 180);
-  const altM = getOrbitVisualAltitudeKm(altKm) * 1000;
+  latDeg: number, lngDeg: number, altKm: number,
+  fromLatDeg: number, fromLngDeg: number
+): InstanceType<typeof import('cesium').Cartesian3>[] {
+  const D2R = Math.PI / 180;
+  const altM = altKm * 1000;
 
-  const e1x = Math.cos(lat) * Math.cos(lng);
-  const e1y = Math.cos(lat) * Math.sin(lng);
-  const e1z = Math.sin(lat);
+  // Текущая позиция — единичный вектор r
+  const latR = latDeg * D2R, lngR = lngDeg * D2R;
+  const rx = Math.cos(latR) * Math.cos(lngR);
+  const ry = Math.cos(latR) * Math.sin(lngR);
+  const rz = Math.sin(latR);
 
-  let px = -e1y;
-  let py = e1x;
-  let pz = 0.0;
-  let pLen = Math.sqrt(px * px + py * py + pz * pz);
-
-  if (pLen < 1e-9) {
-    px = 1;
-    py = 0;
-    pz = 0;
-    pLen = 1;
-  } else {
-    px /= pLen;
-    py /= pLen;
-    pz /= pLen;
+  // Вектор скорости из from→to в ECEF, проецируем на плоскость ⊥ r
+  const fLatR = fromLatDeg * D2R, fLngR = fromLngDeg * D2R;
+  let vx = rx - Math.cos(fLatR) * Math.cos(fLngR);
+  let vy = ry - Math.cos(fLatR) * Math.sin(fLngR);
+  let vz = rz - Math.sin(fLatR);
+  // Убираем радиальную компоненту
+  const vDotR = vx*rx + vy*ry + vz*rz;
+  vx -= vDotR*rx; vy -= vDotR*ry; vz -= vDotR*rz;
+  let vLen = Math.sqrt(vx*vx + vy*vy + vz*vz);
+  if (vLen < 1e-10) {
+    // Нет данных о скорости — используем восток
+    vx = -Math.sin(lngR); vy = Math.cos(lngR); vz = 0;
+    vLen = Math.sqrt(vx*vx + vy*vy);
   }
+  vx /= vLen; vy /= vLen; vz /= vLen;
 
-  const inc = incDeg * (Math.PI / 180);
-  const cosI = Math.cos(inc);
-  const sinI = Math.sin(inc);
-  const dot = e1x * px + e1y * py + e1z * pz;
-  const crx = e1y * pz - e1z * py;
-  const cry = e1z * px - e1x * pz;
-  const crz = e1x * py - e1y * px;
+  // Нормаль плоскости орбиты h = r × v (стабильна по всей орбите)
+  const hx = ry*vz - rz*vy;
+  const hy = rz*vx - rx*vz;
+  const hz = rx*vy - ry*vx;
+  const hLen = Math.sqrt(hx*hx + hy*hy + hz*hz);
+  const hnx = hx/hLen, hny = hy/hLen, hnz = hz/hLen;
 
-  const e2x = px * cosI + crx * sinI + e1x * dot * (1 - cosI);
-  const e2y = py * cosI + cry * sinI + e1y * dot * (1 - cosI);
-  const e2z = pz * cosI + crz * sinI + e1z * dot * (1 - cosI);
+  // f2 = h × r — вектор в направлении движения спутника
+  const f1x = rx, f1y = ry, f1z = rz;
+  const f2x = hny*rz - hnz*ry;
+  const f2y = hnz*rx - hnx*rz;
+  const f2z = hnx*ry - hny*rx;
+  const f2Len = Math.sqrt(f2x*f2x + f2y*f2y + f2z*f2z);
+  const e2x = f2x/f2Len, e2y = f2y/f2Len, e2z = f2z/f2Len;
 
-  const raw: Array<[number, number]> = [];
+  const steps = 360;
+  const points: InstanceType<typeof import('cesium').Cartesian3>[] = [];
 
   for (let i = 0; i <= steps; i++) {
-    const angle = (2 * Math.PI * i) / steps;
-    const cosine = Math.cos(angle);
-    const sine = Math.sin(angle);
-
-    const qx = cosine * e1x + sine * e2x;
-    const qy = cosine * e1y + sine * e2y;
-    const qz = cosine * e1z + sine * e2z;
-
-    const qLen = Math.sqrt(qx * qx + qy * qy + qz * qz);
-    if (qLen < 1e-10) continue;
-
-    const qLat = Math.asin(Math.max(-1, Math.min(1, qz / qLen))) * (180 / Math.PI);
-    const qLng = Math.atan2(qy / qLen, qx / qLen) * (180 / Math.PI);
-    raw.push([qLng, qLat]);
+    const u = (2 * Math.PI * i) / steps;
+    const c = Math.cos(u), s = Math.sin(u);
+    const qx = c*f1x + s*e2x;
+    const qy = c*f1y + s*e2y;
+    const qz = c*f1z + s*e2z;
+    const qLat = Math.asin(Math.max(-1, Math.min(1, qz))) * 180 / Math.PI;
+    const qLon = Math.atan2(qy, qx) * 180 / Math.PI;
+    points.push(Cesium.Cartesian3.fromDegrees(qLon, qLat, altM));
   }
 
-  const segments: InstanceType<typeof import('cesium').Cartesian3>[][] = [];
-  let currentSegment: InstanceType<typeof import('cesium').Cartesian3>[] = [];
-
-  for (let i = 0; i < raw.length; i++) {
-    currentSegment.push(Cesium.Cartesian3.fromDegrees(raw[i][0], raw[i][1], altM));
-
-    if (i < raw.length - 1) {
-      const deltaLng = Math.abs(raw[i + 1][0] - raw[i][0]);
-      if (deltaLng > 180) {
-        if (currentSegment.length >= 2) segments.push(currentSegment);
-        currentSegment = [];
-      }
-    }
-  }
-
-  if (currentSegment.length >= 2) segments.push(currentSegment);
-
-  return segments;
+  return points;
 }
+
 
 async function loadEarthImageryLayers(
   Cesium: typeof import('cesium'),
@@ -234,6 +229,58 @@ async function loadEarthImageryLayers(
   nightLayer.saturation = 1.1;
 }
 
+// Пересоздаёт GroundPrimitive зоны покрытия по новым координатам.
+// Старые примитивы удаляются ПОСЛЕ добавления новых — нет мигания.
+function rebuildCoverageGP(
+  Cesium: typeof import('cesium'),
+  viewer: InstanceType<typeof import('cesium').Viewer>,
+  lng: number, lat: number, radiusMeters: number,
+  color: InstanceType<typeof import('cesium').Color>
+): {
+  fill: InstanceType<typeof import('cesium').GroundPrimitive>,
+  border: InstanceType<typeof import('cesium').GroundPolylinePrimitive>
+} {
+  const fill = new Cesium.GroundPrimitive({
+    geometryInstances: new Cesium.GeometryInstance({
+      geometry: new Cesium.EllipseGeometry({
+        center: Cesium.Cartesian3.fromDegrees(lng, lat),
+        semiMajorAxis: radiusMeters,
+        semiMinorAxis: radiusMeters,
+        granularity: Cesium.Math.toRadians(1),
+      }),
+      attributes: {
+        color: Cesium.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.18)),
+      },
+    }),
+    asynchronous: false,
+  });
+
+  // Граница — геодезическая окружность
+  const pts: InstanceType<typeof Cesium.Cartesian3>[] = [];
+  const N = 120;
+  const d = radiusMeters / (6371 * 1000);
+  const lat0 = lat * Math.PI / 180;
+  const lng0 = lng * Math.PI / 180;
+  for (let i = 0; i <= N; i++) {
+    const b = (2 * Math.PI * i) / N;
+    const lat1 = Math.asin(Math.sin(lat0)*Math.cos(d) + Math.cos(lat0)*Math.sin(d)*Math.cos(b));
+    const lng1 = lng0 + Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(lat0), Math.cos(d)-Math.sin(lat0)*Math.sin(lat1));
+    pts.push(Cesium.Cartesian3.fromRadians(lng1, lat1));
+  }
+  const border = new Cesium.GroundPolylinePrimitive({
+    geometryInstances: new Cesium.GeometryInstance({
+      geometry: new Cesium.GroundPolylineGeometry({ positions: pts, width: 2 }),
+      attributes: { color: Cesium.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.9)) },
+    }),
+    appearance: new Cesium.PolylineColorAppearance(),
+    asynchronous: false,
+  });
+
+  viewer.scene.groundPrimitives.add(fill);
+  viewer.scene.groundPrimitives.add(border);
+  return { fill, border };
+}
+
 export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlobeProps) {
   const viewerRef = useRef<InstanceType<typeof import('cesium').Viewer> | null>(null);
   const pointCollectionRef = useRef<
@@ -243,13 +290,32 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     Map<string, InstanceType<typeof import('cesium').PointPrimitive>>
   >(new Map());
 
-  const orbitEntitiesRef = useRef<InstanceType<typeof import('cesium').Entity>[]>([]);
-  const coverageFillRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const coverageBorderRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const nadirRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
-  const coverageSatIdRef = useRef<string | null>(null);
+  const orbitEntitiesRef    = useRef<InstanceType<typeof import('cesium').Entity>[]>([]);
+  const orbitPrimitivesRef  = useRef<InstanceType<typeof import('cesium').Primitive> | null>(null);
+  const orbitSatIdRef       = useRef<string | null>(null);
+  // Статичная орбита: функция перестройки + последняя позиция (для smooth redraw)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orbitDrawFnRef      = useRef<((...args: any[]) => any) | null>(null);
+  const orbitLastPosRef     = useRef<{ lat: number; lng: number; altKm: number } | null>(null);
+  const orbitLiveSatIdRef   = useRef<string | null>(null);
+  const orbitLiveIncRef     = useRef<number>(0);
+  // Coverage GP
+  const nadirRef            = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const coverageSatIdRef    = useRef<string | null>(null);
+  const coveragePosRef      = useRef<{ lng: number; lat: number; altKm: number } | null>(null);
+  const coverageGPFillRef   = useRef<InstanceType<typeof import('cesium').GroundPrimitive> | null>(null);
+  const coverageGPBorderRef = useRef<InstanceType<typeof import('cesium').GroundPolylinePrimitive> | null>(null);
+  const coverageRadiusRef   = useRef<number>(0);
+  const coverageGPLastRef   = useRef<{ lng: number; lat: number } | null>(null);
+  const coverageFillRef     = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  const coverageBorderRef   = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildCoverageGPRef  = useRef<((...args: any[]) => any) | null>(null);
+
 
   const labelRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
+  // Текущая позиция метки — обновляется каждый кадр через CallbackProperty
+  const labelPosRef = useRef<{ lng: number; lat: number; altKm: number } | null>(null);
   const clickLocationRef = useRef<InstanceType<typeof import('cesium').Entity> | null>(null);
   const clickHandlerRef = useRef<InstanceType<
     typeof import('cesium').ScreenSpaceEventHandler
@@ -343,34 +409,34 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
   }, []);
 
   const clearOrbit = useCallback(() => {
+    orbitSatIdRef.current    = null;
+    orbitLiveSatIdRef.current = null;
+    orbitDrawFnRef.current   = null;
+    orbitLastPosRef.current  = null;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-
     for (const entity of orbitEntitiesRef.current) {
-      try {
-        viewer.entities.remove(entity);
-      } catch {}
+      try { viewer.entities.remove(entity); } catch {}
     }
     orbitEntitiesRef.current = [];
+    if (orbitPrimitivesRef.current) {
+      try { viewer.scene.primitives.remove(orbitPrimitivesRef.current); } catch {}
+      orbitPrimitivesRef.current = null;
+    }
   }, []);
 
   const clearCoverage = useCallback(() => {
-    coverageSatIdRef.current = null;
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    if (coverageFillRef.current) {
-      viewer.entities.remove(coverageFillRef.current);
-      coverageFillRef.current = null;
-    }
-    if (coverageBorderRef.current) {
-      viewer.entities.remove(coverageBorderRef.current);
-      coverageBorderRef.current = null;
-    }
-    if (nadirRef.current) {
-      viewer.entities.remove(nadirRef.current);
-      nadirRef.current = null;
-    }
+    coverageSatIdRef.current  = null;
+    coveragePosRef.current    = null;
+    coverageGPLastRef.current = null;
+    buildCoverageGPRef.current = null;
+    const v = viewerRef.current;
+    if (!v || v.isDestroyed()) return;
+    if (coverageGPFillRef.current)   { try { v.scene.groundPrimitives.remove(coverageGPFillRef.current); }   catch {} coverageGPFillRef.current = null; }
+    if (coverageGPBorderRef.current) { try { v.scene.groundPrimitives.remove(coverageGPBorderRef.current); } catch {} coverageGPBorderRef.current = null; }
+    if (nadirRef.current)            { try { v.entities.remove(nadirRef.current); }          catch {} nadirRef.current = null; }
+    coverageFillRef.current   = null;
+    coverageBorderRef.current = null;
   }, []);
 
   const drawInstant = useCallback((satellite: Satellite) => {
@@ -383,72 +449,136 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     const lng = position?.lng ?? satellite.longitude;
     const altKm = position?.alt ?? satellite.altitude;
 
-    if (!hasRenderableCoordinates(lat, lng, altKm)) return;
+    console.log('[drawInstant]', satellite.name, { lat, lng, altKm, inc: satellite.inclination, hasPos: !!position });
+
+    if (!hasRenderableCoordinates(lat, lng, altKm)) {
+      console.warn('[drawInstant] NOT renderable — skipping', { lat, lng, altKm });
+      return;
+    }
 
     clearOrbit();
 
-    const segments = buildOrbitSegments(Cesium, lat, lng, altKm, satellite.inclination, 360);
-    drawOrbitSegments(satellite.orbitType, segments);
+    // ── Орбита: статичный Primitive, один раз при выборе ──────────────────────
+    const periodMin = satellite.period > 0 ? satellite.period : 90;
+    orbitLiveSatIdRef.current = satellite.id;
+
+    // Функция построения орбиты — принимает текущую и предыдущую позицию.
+    // Предыдущая позиция нужна для вычисления вектора скорости (направления орбиты).
+    const buildOrbitPrimitive = (
+      C: typeof Cesium, v: typeof viewer,
+      pLat: number, pLng: number, pAlt: number,
+      fLat: number, fLng: number  // from-позиция для вектора скорости
+    ) => {
+      const pts = computeFullOrbitPoints(C, pLat, pLng, pAlt, fLat, fLng);
+      const orbitColor = C.Color.fromCssColorString(ORBIT_TRACK_COLORS[0]);
+      const prim = v.scene.primitives.add(new C.Primitive({
+        geometryInstances: new C.GeometryInstance({
+          geometry: new C.PolylineGeometry({
+            positions: pts,
+            width: 2,
+            arcType: C.ArcType.NONE,
+          }),
+          attributes: {
+            color: C.ColorGeometryInstanceAttribute.fromColor(orbitColor.withAlpha(0.9)),
+          },
+        }),
+        appearance: new C.PolylineColorAppearance({ translucent: true }),
+        asynchronous: false,
+      }));
+      return prim;
+    };
+
+    const motion0 = pointMotionRef.current.get(satellite.id);
+    const fromLat0 = motion0?.from.lat ?? (lat - 0.01);
+    const fromLng0 = motion0?.from.lng ?? lng;
+
+    orbitPrimitivesRef.current = buildOrbitPrimitive(Cesium, viewer, lat, lng, altKm, fromLat0, fromLng0);
+    orbitDrawFnRef.current = buildOrbitPrimitive;
+    orbitLastPosRef.current = { lat, lng, altKm };
 
     clearCoverage();
 
-    const angleRad = Math.acos(Math.min(1, EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm)));
-    const radiusMeters = EARTH_RADIUS_KM * angleRad * 1000;
+    // ── Зона покрытия ─────────────────────────────────────────────────────────
+    const horizonRatio = Math.min(0.999, EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
+    const angleRad = Math.acos(horizonRatio);
+    const cappedAngle = Math.min(angleRad, Math.PI * 80 / 180);
+    const radiusMeters = EARTH_RADIUS_KM * cappedAngle * 1000;
     const color = Cesium.Color.fromCssColorString(COVERAGE_COLOR);
-    const initialPosition = Cesium.Cartesian3.fromDegrees(lng, lat, 0);
 
-    coverageFillRef.current = viewer.entities.add({
-      position: initialPosition,
-      ellipse: {
-        semiMajorAxis: radiusMeters,
-        semiMinorAxis: radiusMeters,
-        material: color.withAlpha(0.12),
-        outline: false,
-        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        granularity: Cesium.Math.toRadians(1),
-      },
-    });
+    coveragePosRef.current  = { lng, lat, altKm };
+    coverageRadiusRef.current = radiusMeters;
 
-    coverageBorderRef.current = viewer.entities.add({
-      position: initialPosition,
-      ellipse: {
-        semiMajorAxis: radiusMeters,
-        semiMinorAxis: radiusMeters,
-        material: Cesium.Color.TRANSPARENT,
-        outline: true,
-        outlineColor: color.withAlpha(0.85),
-        outlineWidth: 2,
-        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-        granularity: Cesium.Math.toRadians(1),
-      },
-    });
+    // buildGP — создаёт GroundPrimitive для покрытия (без артефактов)
+    const buildGP = (C: typeof Cesium, v: typeof viewer, pLng: number, pLat: number, r: number) => {
+      const gpFill = new C.GroundPrimitive({
+        geometryInstances: new C.GeometryInstance({
+          geometry: new C.EllipseGeometry({
+            center: C.Cartesian3.fromDegrees(pLng, pLat),
+            semiMajorAxis: r, semiMinorAxis: r,
+            granularity: C.Math.toRadians(1),
+          }),
+          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.18)) },
+        }),
+        asynchronous: false,
+      });
+      const borderPts: InstanceType<typeof C.Cartesian3>[] = [];
+      const N = 120, d = r / (EARTH_RADIUS_KM * 1000);
+      const lat0r = pLat * Math.PI / 180, lng0r = pLng * Math.PI / 180;
+      for (let i = 0; i <= N; i++) {
+        const b = (2 * Math.PI * i) / N;
+        const la1 = Math.asin(Math.sin(lat0r)*Math.cos(d) + Math.cos(lat0r)*Math.sin(d)*Math.cos(b));
+        const lo1 = lng0r + Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(lat0r), Math.cos(d)-Math.sin(lat0r)*Math.sin(la1));
+        borderPts.push(C.Cartesian3.fromRadians(lo1, la1));
+      }
+      const gpBorder = new C.GroundPolylinePrimitive({
+        geometryInstances: new C.GeometryInstance({
+          geometry: new C.GroundPolylineGeometry({ positions: borderPts, width: 2 }),
+          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.9)) },
+        }),
+        appearance: new C.PolylineColorAppearance(),
+        asynchronous: false,
+      });
+      v.scene.groundPrimitives.add(gpFill);
+      v.scene.groundPrimitives.add(gpBorder);
+      return { gpFill, gpBorder };
+    };
 
+    const { gpFill: gf0, gpBorder: gb0 } = buildGP(Cesium, viewer, lng, lat, radiusMeters);
+    coverageGPFillRef.current   = gf0;
+    coverageGPBorderRef.current = gb0;
+    coverageGPLastRef.current   = { lng, lat };
+    (buildCoverageGPRef as React.MutableRefObject<typeof buildGP>).current = buildGP;
+
+    // Надир-линия
     nadirRef.current = viewer.entities.add({
       polyline: {
-        positions: [
-          Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
-          Cesium.Cartesian3.fromDegrees(lng, lat, 0),
-        ],
-        width: 1.5,
+        positions: new Cesium.CallbackProperty(() => {
+          const p = coveragePosRef.current;
+          return [
+            Cesium.Cartesian3.fromDegrees(p ? p.lng : lng, p ? p.lat : lat, (p ? p.altKm : altKm) * 1000),
+            Cesium.Cartesian3.fromDegrees(p ? p.lng : lng, p ? p.lat : lat, 0),
+          ];
+        }, false) as never,
+        width: 1,
         material: new Cesium.PolylineDashMaterialProperty({
-          color: color.withAlpha(0.55),
-          dashLength: 12,
+          color: color.withAlpha(0.4),
+          dashLength: 14,
           dashPattern: 0xff00,
         }),
         clampToGround: false,
         arcType: Cesium.ArcType.NONE,
         depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
-          color: color.withAlpha(0.18),
-          dashLength: 12,
+          color: color.withAlpha(0.12),
+          dashLength: 14,
           dashPattern: 0xff00,
         }),
       },
     });
 
     coverageSatIdRef.current = satellite.id;
-
     viewer.scene.requestRender();
-  }, [clearOrbit, clearCoverage, drawOrbitSegments]);
+    console.log('[drawInstant] done — orbit+coverage built');
+  }, [clearOrbit, clearCoverage]);
 
   const initViewer = useCallback(async () => {
     if (!containerRef.current || viewerRef.current) return;
@@ -773,41 +903,60 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
         const motion = pointMotionRef.current.get(selectedId);
         if (motion) {
           const position = getMotionPosition(motion, nowMs);
-          labelRef.current.position = new activeCesium.ConstantPositionProperty(
-            activeCesium.Cartesian3.fromDegrees(
-              position.lng,
-              position.lat,
-              position.altKm * 1000
-            )
-          );
+          labelPosRef.current = { lng: position.lng, lat: position.lat, altKm: position.altKm };
         }
       }
 
+      // Орбита: пересчитываем когда спутник сместился > 0.5° (~55 км)
+      const orbitSat = orbitLiveSatIdRef.current;
+      if (orbitSat) {
+        const oMotion = pointMotionRef.current.get(orbitSat);
+        if (oMotion) {
+          const oPos = getMotionPosition(oMotion, nowMs);
+          const oLast = orbitLastPosRef.current;
+          const oMoved = !oLast ||
+            Math.abs(oPos.lat - oLast.lat) > 0.2 ||
+            Math.abs(oPos.lng - oLast.lng) > 0.2;
+          const drawFn = orbitDrawFnRef.current;
+          if (oMoved && drawFn && activeViewer && !activeViewer.isDestroyed() && activeCesium) {
+            // Новый Primitive добавляется ДО удаления старого — нет мигания
+            const newPrim = drawFn(
+              activeCesium, activeViewer,
+              oPos.lat, oPos.lng, oPos.altKm,
+              oMotion.from.lat, oMotion.from.lng  // вектор скорости для стабильной нормали
+            );
+            if (orbitPrimitivesRef.current) {
+              try { activeViewer.scene.primitives.remove(orbitPrimitivesRef.current); } catch {}
+            }
+            orbitPrimitivesRef.current = newPrim;
+            orbitLastPosRef.current = { lat: oPos.lat, lng: oPos.lng, altKm: oPos.altKm };
+          }
+        }
+      }
+
+      // Зона покрытия: обновляем ref + пересоздаём GP при смещении > 0.1°
       const coverageSatId = coverageSatIdRef.current;
       if (coverageSatId) {
         const motion = pointMotionRef.current.get(coverageSatId);
         if (motion) {
           const position = getMotionPosition(motion, nowMs);
+          coveragePosRef.current = { lng: position.lng, lat: position.lat, altKm: position.altKm };
 
-          if (coverageFillRef.current) {
-            coverageFillRef.current.position = new activeCesium.ConstantPositionProperty(
-              activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
+          const gpLast = coverageGPLastRef.current;
+          const moved = !gpLast ||
+            Math.abs(position.lat - gpLast.lat) > 0.1 ||
+            Math.abs(position.lng - gpLast.lng) > 0.1;
+          const buildFn = buildCoverageGPRef.current;
+          if (moved && buildFn && activeViewer && !activeViewer.isDestroyed() && activeCesium) {
+            const r = coverageRadiusRef.current;
+            const { gpFill: nf, gpBorder: nb } = buildFn(
+              activeCesium, activeViewer, position.lng, position.lat, r
             );
-          }
-          if (coverageBorderRef.current) {
-            coverageBorderRef.current.position = new activeCesium.ConstantPositionProperty(
-              activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0)
-            );
-          }
-          if (nadirRef.current) {
-            nadirRef.current.polyline!.positions = new activeCesium.ConstantProperty([
-              activeCesium.Cartesian3.fromDegrees(
-                position.lng,
-                position.lat,
-                position.altKm * 1000
-              ),
-              activeCesium.Cartesian3.fromDegrees(position.lng, position.lat, 0),
-            ]);
+            if (coverageGPFillRef.current)   { try { activeViewer.scene.groundPrimitives.remove(coverageGPFillRef.current); }   catch {} }
+            if (coverageGPBorderRef.current) { try { activeViewer.scene.groundPrimitives.remove(coverageGPBorderRef.current); } catch {} }
+            coverageGPFillRef.current   = nf;
+            coverageGPBorderRef.current = nb;
+            coverageGPLastRef.current   = { lat: position.lat, lng: position.lng };
           }
         }
       }
@@ -977,6 +1126,7 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     if (labelRef.current) {
       viewer.entities.remove(labelRef.current);
       labelRef.current = null;
+      labelPosRef.current = null;
     }
 
     if (selectedSatellite) {
@@ -986,8 +1136,14 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
       const altKm = position?.alt ?? selectedSatellite.altitude;
 
       if (hasRenderableCoordinates(lat, lng, altKm)) {
+        // Инициализируем pos ref и создаём label с CallbackProperty
+        labelPosRef.current = { lng, lat, altKm };
         labelRef.current = viewer.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000),
+          position: new Cesium.CallbackProperty(() => {
+            const p = labelPosRef.current;
+            if (!p) return Cesium.Cartesian3.fromDegrees(lng, lat, altKm * 1000);
+            return Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altKm * 1000);
+          }, false) as never,
           label: {
             text: selectedSatellite.name,
             font: '11px Inter, system-ui, sans-serif',
@@ -1014,7 +1170,27 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     if (viewerState !== 'ready' || !selectedSatellite) return;
 
     drawInstant(selectedSatellite);
-  }, [selectedSatellite, viewerState, clearCoverage, clearOrbit, drawInstant, drawOrbitSegments]);
+  }, [selectedSatellite, viewerState, clearCoverage, clearOrbit, drawInstant]);
+
+  // Если при выборе спутника позиции ещё не было — перерисовываем когда она появится
+  useEffect(() => {
+    const unsubscribe = useSatelliteStore.subscribe((state, prev) => {
+      if (state.positions === prev.positions) return;
+      const sel = selectedSatelliteRef.current;
+      if (!sel) return;
+      // Орбита уже нарисована — не перерисовываем. Только если coverageSatIdRef не установлен
+      // (значит drawInstant не смог отрисоваться из-за отсутствия позиции)
+      if (coverageSatIdRef.current === sel.id) return;
+      if (viewerRef.current && !viewerRef.current.isDestroyed() && cesiumRef.current) {
+        const pos = state.positions.get(sel.id);
+        if (pos && hasRenderableCoordinates(pos.lat, pos.lng, pos.alt)) {
+          console.log('[positions arrived] re-drawing for', sel.name);
+          drawInstant(sel);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [drawInstant]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

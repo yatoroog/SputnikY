@@ -15,6 +15,10 @@ import GroupingSelector from './GroupingSelector';
 import TleUploader from './TleUploader';
 import type { Satellite } from '@/types';
 
+interface SidebarProps {
+  className?: string;
+}
+
 function getSourceLabel(source: string | null | undefined): string {
   switch (source) {
     case 'n2yo':
@@ -76,7 +80,7 @@ function getVisibleCatalogNote(note: string | null | undefined): string | null {
   return normalized;
 }
 
-export default function Sidebar() {
+export default function Sidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
   const satellites = useSatelliteStore((state) => state.satellites);
@@ -118,7 +122,12 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="panel-base glass-shimmer relative h-full w-[min(392px,calc(100vw-1rem))] overflow-hidden animate-slide-in-left">
+    <div
+      className={cn(
+        'panel-base glass-shimmer relative h-full w-[min(392px,calc(100vw-1rem))] overflow-hidden animate-slide-in-left',
+        className
+      )}
+    >
       {/* Top specular line */}
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
 

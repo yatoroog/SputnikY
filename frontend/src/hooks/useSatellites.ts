@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useFilterStore } from '@/store/filterStore';
 import { fetchSatelliteCatalog } from '@/lib/api';
@@ -21,13 +21,18 @@ function deriveFilterFacets(satellites: Satellite[]): FilterFacets {
   };
 }
 
-export function useSatellites() {
+interface UseSatellitesOptions {
+  skipInitialLoad?: boolean;
+}
+
+export function useSatellites(options: UseSatellitesOptions = {}) {
   const setSatellites = useSatelliteStore((state) => state.setSatellites);
   const setCatalogStatus = useSatelliteStore((state) => state.setCatalogStatus);
   const setFilterFacets = useSatelliteStore((state) => state.setFilterFacets);
   const setLoading = useSatelliteStore((state) => state.setLoading);
   const setError = useSatelliteStore((state) => state.setError);
   const { country, orbitType, purpose, search } = useFilterStore();
+  const didSkipInitialLoadRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,8 +77,21 @@ export function useSatellites() {
   ]);
 
   useEffect(() => {
+    const hasActiveCatalogFilters = Boolean(country || orbitType || purpose || search);
+    const hasSeededSatellites = useSatelliteStore.getState().satellites.length > 0;
+
+    if (
+      options.skipInitialLoad &&
+      !didSkipInitialLoadRef.current &&
+      hasSeededSatellites &&
+      !hasActiveCatalogFilters
+    ) {
+      didSkipInitialLoadRef.current = true;
+      return;
+    }
+
     load();
-  }, [load]);
+  }, [country, orbitType, purpose, search, load, options.skipInitialLoad]);
 
   return { refetch: load };
 }

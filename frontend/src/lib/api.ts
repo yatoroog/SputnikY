@@ -16,27 +16,67 @@ import type {
 } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+function getConfiguredClientBaseUrl(): string {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+  try {
+    const url = new URL(configuredUrl);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      url.hostname = window.location.hostname;
+    }
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return configuredUrl.replace(/\/$/, '');
+  }
+}
+
+function getRequestBaseUrls(): string[] {
+  if (typeof window === 'undefined') {
+    return [(process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')];
+  }
+
+  const candidates = [
+    '',
+    getConfiguredClientBaseUrl(),
+    `${window.location.protocol}//${window.location.hostname}:8080`,
+  ];
+
+  return Array.from(new Set(candidates.map((value) => value.replace(/\/$/, ''))));
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${BASE_URL}${path}`;
   const headers = new Headers(options?.headers);
 
   if (!(options?.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`API Error ${response.status}: ${errorText}`);
+  for (const baseUrl of getRequestBaseUrls()) {
+    const url = `${baseUrl}${path}`;
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        lastError = new Error(`API Error ${response.status}: ${errorText}`);
+        continue;
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error : new Error('Unknown API request error');
+    }
   }
 
-  return response.json() as Promise<T>;
+  throw lastError ?? new Error('API request failed');
 }
 
 type SatelliteWire = Partial<Satellite> & {

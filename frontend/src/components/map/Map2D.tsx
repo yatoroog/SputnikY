@@ -78,6 +78,19 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [overlayMarkers, setOverlayMarkers] = useState<
+    Array<{
+      id: string;
+      name: string;
+      orbitType: string;
+      x: number;
+      y: number;
+      size: number;
+      isSelected: boolean;
+      color: string;
+    }>
+  >([]);
 
   const positionsRef = useRef<Map<string, SatellitePosition>>(new Map());
   const selectedSatRef = useRef<Satellite | null>(selectedSatellite);
@@ -89,6 +102,15 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   satellitesRef.current = satellites;
   selectedSatRef.current = selectedSatellite;
   isCloseUpRef.current = isCloseUp;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    setIsTouchDevice(
+      'ontouchstart' in window ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +166,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
       cancelled = true;
       orbitLinesRef.current.forEach((l) => { try { l.destroy(); } catch {} });
       orbitLinesRef.current = [];
-      markersRef.current.forEach((m) => { try { m.destroy(); } catch {} });
+      markersRef.current.forEach((marker) => { try { marker.destroy(); } catch {} });
       markersRef.current.clear();
       if (coverageCircleRef.current) { try { coverageCircleRef.current.destroy(); } catch {} }
       if (clickedMarkerRef.current) { try { clickedMarkerRef.current.destroy(); } catch {} }
@@ -188,7 +210,8 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         const positions = positionsRef.current;
         markersRef.current.forEach((marker, id) => {
           const p = positions.get(id);
-          if (p) marker.setCoordinates([p.lng, p.lat]);
+          if (!p) return;
+          marker.setCoordinates([p.lng, p.lat]);
         });
         if (isCloseUpRef.current && selectedSatRef.current) {
           const p = positions.get(selectedSatRef.current.id);
@@ -206,6 +229,14 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
     const map = mapRef.current;
     const mapgl = mapglRef.current;
     if (!map || !mapgl || !mapReady) return;
+
+    if (isTouchDevice) {
+      markersRef.current.forEach((marker) => {
+        marker.destroy();
+      });
+      markersRef.current.clear();
+      return;
+    }
 
     const currentIds = new Set(satellites.map((s) => s.id));
     const selId = selectedSatellite?.id ?? null;
@@ -238,7 +269,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
 
       if (existing) {
         if (needsIconRefresh.has(sat.id)) {
-          const size = isSelected ? 20 : 14;
+          const size = isTouchDevice ? (isSelected ? 30 : 22) : isSelected ? 20 : 14;
           existing.setIcon({
             icon: makeDotSvg(color, isSelected),
             size: [size, size],
@@ -246,7 +277,7 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
           });
         }
       } else {
-        const size = isSelected ? 20 : 14;
+        const size = isTouchDevice ? (isSelected ? 30 : 22) : isSelected ? 20 : 14;
         const marker = new mapgl.Marker(map, {
           coordinates: [lng, lat],
           icon: makeDotSvg(color, isSelected),
@@ -263,7 +294,71 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
         markersRef.current.set(sat.id, marker);
       }
     }
-  }, [satellites, selectedSatellite, selectSatellite, mapReady]);
+
+  }, [satellites, selectedSatellite, selectSatellite, mapReady, isTouchDevice]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !isTouchDevice || isCloseUp) {
+      setOverlayMarkers([]);
+      return;
+    }
+
+    let rafId = 0;
+    let lastMs = 0;
+
+    const updateOverlay = () => {
+      const now = performance.now();
+      if (now - lastMs >= 75) {
+        lastMs = now;
+        const [width, height] = map.getSize();
+        const positions = positionsRef.current;
+        const selectedId = selectedSatRef.current?.id ?? null;
+        const nextMarkers: Array<{
+          id: string;
+          name: string;
+          orbitType: string;
+          x: number;
+          y: number;
+          size: number;
+          isSelected: boolean;
+          color: string;
+        }> = [];
+
+        for (const sat of satellitesRef.current) {
+          const pos = positions.get(sat.id);
+          const lat = pos?.lat ?? sat.latitude;
+          const lng = pos?.lng ?? sat.longitude;
+          const altKm = pos?.alt ?? sat.altitude;
+
+          if (!hasRenderableCoords(lat, lng, altKm)) continue;
+
+          const [x, y] = map.project([lng, lat]);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if (x < -24 || y < -24 || x > width + 24 || y > height + 24) continue;
+
+          const isSelected = selectedId === sat.id;
+          nextMarkers.push({
+            id: sat.id,
+            name: sat.name,
+            orbitType: sat.orbitType,
+            x,
+            y,
+            size: isSelected ? 20 : 14,
+            isSelected,
+            color: getOrbitColor(sat.orbitType),
+          });
+        }
+
+        setOverlayMarkers(nextMarkers);
+      }
+
+      rafId = requestAnimationFrame(updateOverlay);
+    };
+
+    rafId = requestAnimationFrame(updateOverlay);
+    return () => cancelAnimationFrame(rafId);
+  }, [isCloseUp, isTouchDevice, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -414,6 +509,37 @@ export default function Map2D({ satellites, selectedSatellite }: Map2DProps) {
   return (
     <div className="relative w-full h-full" style={{ background: '#0a1628' }}>
       <div ref={containerRef} className="absolute inset-0" />
+      {isTouchDevice && !isCloseUp && overlayMarkers.length > 0 && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {overlayMarkers.map((marker) => (
+            <button
+              key={marker.id}
+              type="button"
+              className="pointer-events-auto absolute rounded-full"
+              style={{
+                left: marker.x,
+                top: marker.y,
+                width: marker.size,
+                height: marker.size,
+                transform: 'translate(-50%, -50%)',
+                backgroundImage: `url("${makeDotSvg(marker.color, marker.isSelected)}")`,
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: 'contain',
+              }}
+              onClick={() => {
+                const satellite = satellitesRef.current.find((item) => item.id === marker.id);
+                if (satellite) {
+                  markerClickedRef.current = true;
+                  selectSatellite(satellite);
+                }
+              }}
+              aria-label={marker.name}
+              title={`${marker.name} (${marker.orbitType || 'Unknown'})`}
+            />
+          ))}
+        </div>
+      )}
       {mapError && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0a1628]/90 px-6 text-center">
           <div className="panel-base max-w-md p-5">
