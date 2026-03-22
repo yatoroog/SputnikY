@@ -10,7 +10,7 @@ function getBackendBaseUrl(): string {
 }
 
 function buildTargetUrl(request: NextRequest, path: string[]): string {
-  const targetUrl = new URL(`${getBackendBaseUrl()}/${path.join('/')}`);
+  const targetUrl = new URL(`${getBackendBaseUrl()}/api/${path.join('/')}`);
   request.nextUrl.searchParams.forEach((value, key) => {
     targetUrl.searchParams.append(key, value);
   });

@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  devIndicators: false,
   output: 'standalone',
+  turbopack: {},
   transpilePackages: ['resium', 'cesium', 'lucide-react', 'zustand', '@2gis/mapgl'],
   env: {
     CESIUM_BASE_URL: '/cesium',

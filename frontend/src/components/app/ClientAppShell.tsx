@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { ChevronDown, ChevronUp, Cuboid, Map as MapIcon, Menu, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Cuboid, Map as MapIcon, Menu, X, Flame } from 'lucide-react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
 import { useThemeStore } from '@/store/themeStore';
@@ -74,6 +74,16 @@ const TimelineControl = dynamic(() => import('@/components/ui/TimelineControl'),
   loading: () => null,
 });
 
+const WhatsOverhead = dynamic(() => import('@/components/ui/WhatsOverhead'), {
+  ssr: false,
+  loading: () => null,
+});
+
+const HeatmapOverlay = dynamic(() => import('@/components/ui/HeatmapOverlay'), {
+  ssr: false,
+  loading: () => null,
+});
+
 type ViewMode = '3d' | '2d';
 
 interface ClientAppShellProps {
@@ -100,6 +110,7 @@ export default function ClientAppShell({
   const [isMobileDetailsOpen, setIsMobileDetailsOpen] = useState(false);
   const [isMobileDetailsMinimized, setIsMobileDetailsMinimized] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
   const hadMobileDetailsTargetRef = useRef(false);
 
   useSatellites({ skipInitialLoad: initialSatellites.length > 0 });
@@ -180,6 +191,7 @@ export default function ClientAppShell({
         ) : (
           <Map2D satellites={satellites} selectedSatellite={selectedSatellite} />
         )}
+        {viewMode === '2d' && <HeatmapOverlay visible={heatmapVisible} />}
       </div>
 
       <div className="absolute left-1/2 top-5 z-20 hidden -translate-x-1/2 lg:block">
@@ -234,6 +246,12 @@ export default function ClientAppShell({
 
       {!isMobileViewport && <NotificationCenter />}
 
+      {!isMobileViewport && (
+        <div className="absolute top-4 right-20 z-20">
+          <WhatsOverhead />
+        </div>
+      )}
+
       {!isComparisonOpen && selectedSatellite && (
         <div className="absolute bottom-28 right-4 top-20 z-10 hidden lg:block">
           <SatelliteCard />
@@ -258,7 +276,19 @@ export default function ClientAppShell({
       )}
 
       {viewMode === '2d' && (
-        <div className="absolute bottom-5 right-4 z-20 hidden lg:block">
+        <div className="absolute bottom-5 right-4 z-20 hidden lg:flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setHeatmapVisible((v) => !v)}
+            className={`premium-icon-button flex h-10 w-10 items-center justify-center rounded-2xl transition-all duration-300 ${
+              heatmapVisible
+                ? 'bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan'
+                : 'panel-base text-[#637196] hover:text-[#94a3c0]'
+            }`}
+            title={heatmapVisible ? 'Скрыть тепловую карту' : 'Тепловая карта плотности'}
+          >
+            <Flame size={16} />
+          </button>
           <ThemeToggle />
         </div>
       )}

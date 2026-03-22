@@ -74,6 +74,18 @@ type Pass struct {
 	LOS           int64   `json:"los"`
 	MaxElevation  float64 `json:"max_elevation"`
 	Duration      int     `json:"duration"`
+	AOSAzimuth    float64 `json:"aos_azimuth"`
+	LOSAzimuth    float64 `json:"los_azimuth"`
+	TCA           int64   `json:"tca"`
+	TCAAzimuth    float64 `json:"tca_azimuth"`
+	TCAElevation  float64 `json:"tca_elevation"`
+}
+
+// PassTrackPoint describes a single look-angle sample during a satellite pass.
+type PassTrackPoint struct {
+	Time      int64   `json:"time"`
+	Azimuth   float64 `json:"azimuth"`
+	Elevation float64 `json:"elevation"`
 }
 
 // ObserverArea describes a circular observation area on the ground.
@@ -99,6 +111,22 @@ type Approach struct {
 	ClosestLongitude   float64 `json:"closest_lng"`
 	ClosestAltitudeKm  float64 `json:"closest_altitude_km"`
 	ClosestVelocityKmS float64 `json:"closest_velocity_km_s"`
+}
+
+// Conjunction describes a predicted close approach between two satellites.
+type Conjunction struct {
+	Satellite1ID   string  `json:"satellite1_id"`
+	Satellite1Name string  `json:"satellite1_name"`
+	Satellite2ID   string  `json:"satellite2_id"`
+	Satellite2Name string  `json:"satellite2_name"`
+	ClosestAt      int64   `json:"closest_at"`
+	MinDistanceKm  float64 `json:"min_distance_km"`
+	Sat1Lat        float64 `json:"sat1_lat"`
+	Sat1Lng        float64 `json:"sat1_lng"`
+	Sat1Alt        float64 `json:"sat1_alt"`
+	Sat2Lat        float64 `json:"sat2_lat"`
+	Sat2Lng        float64 `json:"sat2_lng"`
+	Sat2Alt        float64 `json:"sat2_alt"`
 }
 
 // WSMessage is the envelope for all WebSocket messages.

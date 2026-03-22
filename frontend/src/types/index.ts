@@ -90,6 +90,17 @@ export interface AreaPass {
   los: number;
   maxElevation: number;
   duration: number;
+  aosAzimuth: number;
+  losAzimuth: number;
+  tca: number;
+  tcaAzimuth: number;
+  tcaElevation: number;
+}
+
+export interface PassTrackPoint {
+  time: number;
+  azimuth: number;
+  elevation: number;
 }
 
 export interface ObserverArea {
@@ -155,6 +166,21 @@ export interface SatelliteNotification {
   satellite: TrackedSatellite;
   observer: ObserverArea;
   approach: SatelliteApproach;
+}
+
+export interface Conjunction {
+  satellite1Id: string;
+  satellite1Name: string;
+  satellite2Id: string;
+  satellite2Name: string;
+  closestAt: number;
+  minDistanceKm: number;
+  sat1Lat: number;
+  sat1Lng: number;
+  sat1Alt: number;
+  sat2Lat: number;
+  sat2Lng: number;
+  sat2Alt: number;
 }
 
 export interface WSMessage {
