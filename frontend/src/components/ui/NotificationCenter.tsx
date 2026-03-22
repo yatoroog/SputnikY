@@ -227,22 +227,28 @@ export default function NotificationCenter() {
 
       {activeNotification && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-[#040711]/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-[#040711]/70 p-4 backdrop-blur-sm sm:p-6"
           onClick={closeNotification}
         >
           <div
-            className="panel-base glass-shimmer relative w-full max-w-[560px] overflow-hidden rounded-[28px]"
+            className="panel-base glass-shimmer relative flex w-full max-w-[680px] max-h-[min(78vh,720px)] flex-col overflow-hidden rounded-[26px] animate-fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notification-details-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 p-6">
+            <div className="flex items-start justify-between gap-4 px-5 py-5 sm:px-6 sm:py-6">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.24em] text-[#637196]">
                   Детали уведомления
                 </p>
-                <h3 className="mt-2 text-xl font-semibold text-white">
+                <h3
+                  id="notification-details-title"
+                  className="mt-2 max-w-[520px] text-lg font-semibold text-white sm:text-xl"
+                >
                   {activeNotification.title}
                 </h3>
-                <p className="mt-2 max-w-[420px] text-sm leading-relaxed text-[#94a3c0]">
+                <p className="mt-2 max-w-[520px] text-sm leading-relaxed text-[#94a3c0]">
                   {activeNotification.summary}
                 </p>
               </div>
@@ -256,65 +262,67 @@ export default function NotificationCenter() {
               </button>
             </div>
 
-            <div className="mx-6 h-px glass-divider-h" />
+            <div className="mx-5 h-px glass-divider-h sm:mx-6" />
 
-            <div className="grid gap-3 p-6 md:grid-cols-2">
-              <DetailRow
-                label="Спутник"
-                value={`${activeNotification.satellite.name} · NORAD ${activeNotification.satellite.noradId}`}
-              />
-              <DetailRow
-                label="Орбита"
-                value={activeNotification.satellite.orbitType || 'Не указана'}
-              />
-              <DetailRow
-                label="Страна"
-                value={activeNotification.satellite.country || 'Unknown'}
-              />
-              <DetailRow
-                label="Назначение"
-                value={activeNotification.satellite.purpose || 'Не указано'}
-              />
-              <DetailRow
-                label="Город"
-                value={`${activeNotification.observer.name} · радиус ${activeNotification.observer.radiusKm} км`}
-              />
-              <DetailRow
-                label="Уведомление создано"
-                value={formatNotificationTime(Math.floor(activeNotification.createdAt / 1000))}
-              />
-              <DetailRow
-                label="Вход в радиус"
-                value={formatNotificationTime(activeNotification.approach.startAt)}
-              />
-              <DetailRow
-                label="Выход из радиуса"
-                value={formatNotificationTime(activeNotification.approach.endAt)}
-              />
-              <DetailRow
-                label="Ближайшая точка"
-                value={formatNotificationTime(activeNotification.approach.closestAt)}
-              />
-              <DetailRow
-                label="Минимальная дистанция"
-                value={`${activeNotification.approach.minDistanceKm.toFixed(1)} км`}
-              />
-              <DetailRow
-                label="Высота в ближайшей точке"
-                value={`${activeNotification.approach.closestAltitudeKm.toFixed(1)} км`}
-              />
-              <DetailRow
-                label="Скорость"
-                value={`${activeNotification.approach.closestVelocityKmS.toFixed(2)} км/с`}
-              />
-              <DetailRow
-                label="Длительность сближения"
-                value={formatDurationMinutes(activeNotification.approach.duration)}
-              />
-              <DetailRow
-                label="Координаты ближайшей точки"
-                value={`${activeNotification.approach.closestLat.toFixed(2)}°, ${activeNotification.approach.closestLng.toFixed(2)}°`}
-              />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="grid gap-2.5 px-5 py-4 sm:px-6 sm:py-5 md:grid-cols-2 lg:grid-cols-3">
+                <DetailRow
+                  label="Спутник"
+                  value={`${activeNotification.satellite.name} · NORAD ${activeNotification.satellite.noradId}`}
+                />
+                <DetailRow
+                  label="Орбита"
+                  value={activeNotification.satellite.orbitType || 'Не указана'}
+                />
+                <DetailRow
+                  label="Страна"
+                  value={activeNotification.satellite.country || 'Unknown'}
+                />
+                <DetailRow
+                  label="Назначение"
+                  value={activeNotification.satellite.purpose || 'Не указано'}
+                />
+                <DetailRow
+                  label="Город"
+                  value={`${activeNotification.observer.name} · радиус ${activeNotification.observer.radiusKm} км`}
+                />
+                <DetailRow
+                  label="Уведомление создано"
+                  value={formatNotificationTime(Math.floor(activeNotification.createdAt / 1000))}
+                />
+                <DetailRow
+                  label="Вход в радиус"
+                  value={formatNotificationTime(activeNotification.approach.startAt)}
+                />
+                <DetailRow
+                  label="Выход из радиуса"
+                  value={formatNotificationTime(activeNotification.approach.endAt)}
+                />
+                <DetailRow
+                  label="Ближайшая точка"
+                  value={formatNotificationTime(activeNotification.approach.closestAt)}
+                />
+                <DetailRow
+                  label="Минимальная дистанция"
+                  value={`${activeNotification.approach.minDistanceKm.toFixed(1)} км`}
+                />
+                <DetailRow
+                  label="Высота в ближайшей точке"
+                  value={`${activeNotification.approach.closestAltitudeKm.toFixed(1)} км`}
+                />
+                <DetailRow
+                  label="Скорость"
+                  value={`${activeNotification.approach.closestVelocityKmS.toFixed(2)} км/с`}
+                />
+                <DetailRow
+                  label="Длительность сближения"
+                  value={formatDurationMinutes(activeNotification.approach.duration)}
+                />
+                <DetailRow
+                  label="Координаты ближайшей точки"
+                  value={`${activeNotification.approach.closestLat.toFixed(2)}°, ${activeNotification.approach.closestLng.toFixed(2)}°`}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -325,9 +333,11 @@ export default function NotificationCenter() {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-[#637196]">{label}</p>
-      <p className="mt-2 text-sm font-medium leading-relaxed text-[#eef2ff]">{value}</p>
+    <div className="rounded-[18px] border border-white/10 bg-white/[0.035] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-[#637196]">{label}</p>
+      <p className="mt-1.5 text-[13px] font-medium leading-relaxed text-[#eef2ff] sm:text-sm">
+        {value}
+      </p>
     </div>
   );
 }
