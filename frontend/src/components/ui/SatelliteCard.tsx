@@ -12,6 +12,11 @@ import {
   getOrbitTypeColor,
   getOrbitTypeLabel,
 } from '@/lib/utils';
+import {
+  computeCoverageRadiusKm,
+  formatCoverageModelLabel,
+  getCoverageMinElevationDeg,
+} from '@/lib/coverage';
 import type { Conjunction } from '@/types';
 
 interface SatelliteCardProps {
@@ -54,6 +59,8 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
 
   const sat = selectedSatellite;
   const orbitColor = getOrbitTypeColor(sat.orbitType);
+  const coverageMinElevationDeg = getCoverageMinElevationDeg();
+  const coverageRadiusKm = computeCoverageRadiusKm(sat.altitude, coverageMinElevationDeg);
 
   const params = [
     {
@@ -90,6 +97,11 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
       icon: Gauge,
       label: 'Скорость',
       value: `${sat.velocity.toFixed(1)} км/с`,
+    },
+    {
+      icon: Crosshair,
+      label: 'Радиус зоны',
+      value: `${coverageRadiusKm.toFixed(0)} км`,
     },
   ];
 
@@ -164,6 +176,10 @@ export default function SatelliteCard({ className }: SatelliteCardProps) {
             );
           })}
         </div>
+        <p className="mt-4 text-xs leading-relaxed text-[#637196]">
+          Зона на карте рассчитывается как область видимости спутника при модели{' '}
+          <span className="text-[#94a3c0]">{formatCoverageModelLabel(coverageMinElevationDeg)}</span>.
+        </p>
       </div>
 
       <div className="mx-5 h-px glass-divider-h" />

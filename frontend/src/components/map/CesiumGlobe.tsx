@@ -3,15 +3,17 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useSatelliteStore } from '@/store/satelliteStore';
 import { useTimeStore } from '@/store/timeStore';
-import type { Satellite, SatellitePosition, OrbitPoint } from '@/types';
-import { fetchOrbit } from '@/lib/api';
+import type { Satellite, SatellitePosition } from '@/types';
 import { isRenderableAltitudeKm } from '@/lib/utils';
+import {
+  EARTH_RADIUS_KM,
+  computeCoverageRadiusMeters,
+} from '@/lib/coverage';
 
 if (typeof window !== 'undefined') {
   window.CESIUM_BASE_URL = '/cesium';
 }
 
-const EARTH_RADIUS_KM = 6_371;
 const EARTH_RADIUS_METERS = 6_378_137;
 const INITIAL_CAMERA_RANGE_METERS = 22_000_000;
 
@@ -501,10 +503,7 @@ export default function CesiumGlobe({ satellites, selectedSatellite }: CesiumGlo
     clearCoverage();
 
     // ── Зона покрытия ─────────────────────────────────────────────────────────
-    const horizonRatio = Math.min(0.999, EARTH_RADIUS_KM / (EARTH_RADIUS_KM + altKm));
-    const angleRad = Math.acos(horizonRatio);
-    const cappedAngle = Math.min(angleRad, Math.PI * 80 / 180);
-    const radiusMeters = EARTH_RADIUS_KM * cappedAngle * 1000;
+    const radiusMeters = computeCoverageRadiusMeters(altKm);
     const color = Cesium.Color.fromCssColorString(COVERAGE_COLOR);
 
     coveragePosRef.current  = { lng, lat, altKm };
