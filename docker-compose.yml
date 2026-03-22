@@ -1,15 +1,40 @@
-version: '3.8'
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-sputnikx}
+      - POSTGRES_USER=${POSTGRES_USER:-sputnikx}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sputnikx}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   backend:
     build: ./backend
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
+      - DATABASE_URL=${DATABASE_URL:-postgres://sputnikx:sputnikx@postgres:5432/sputnikx?sslmode=disable}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-sputnikx}
+      - POSTGRES_USER=${POSTGRES_USER:-sputnikx}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sputnikx}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-disable}
       - N2YO_API_KEY=${N2YO_API_KEY:-}
       - TLE_DATA_PATH=${TLE_DATA_PATH:-}
     volumes:
       - ./backend/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -28,3 +53,6 @@ services:
       - NEXT_PUBLIC_2GIS_MAPGL_KEY=${NEXT_PUBLIC_2GIS_MAPGL_KEY:-}
     depends_on:
       - backend
+
+volumes:
+  postgres-data:

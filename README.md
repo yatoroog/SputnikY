@@ -54,6 +54,7 @@ web-platform-mso/
 │   ├── internal/models/         модели API, WS и доменные типы
 │   ├── internal/n2yo/           клиент N2YO REST API
 │   ├── internal/satellite/      propagation, orbit/pass/approach/conjunction logic, catalog service
+│   ├── internal/store/          PostgreSQL config, migrations, repository
 │   ├── internal/tle/            парсер TLE и встроенные пресеты
 │   └── internal/ws/             WebSocket hub и клиентские подписки
 ├── frontend/
@@ -67,13 +68,13 @@ web-platform-mso/
 │   ├── src/store/               Zustand stores
 │   └── src/types/               frontend-типы
 ├── shared/api-contract.ts       общий TypeScript-контракт API
-└── docker-compose.yml           локальный запуск frontend + backend
+└── docker-compose.yml           локальный запуск frontend + backend + PostgreSQL
 ```
 
 Примечания:
 - `frontend/public/cesium/` подготавливается скриптом `frontend/scripts/copy-cesium.mjs` при `npm run dev` и `npm run build`.
 - `backend/internal/celestrak/` используется в runtime для SATCAT enrichment метаданных каталога и при необходимости может также забирать bulk TLE из CelesTrak.
-- Основное состояние каталога backend хранит только в памяти процесса, без БД.
+- Активный каталог, статус источника и последние вычисленные позиции теперь сохраняются в PostgreSQL и восстанавливаются после рестарта backend.
 
 ## Архитектура
 
@@ -98,15 +99,20 @@ Backend загружает и помечает каталог одним из и
 
 - `backend/cmd/server/main.go`
   - старт Fiber-приложения;
-  - первичная загрузка каталога;
+  - подключение PostgreSQL и применение миграций;
+  - восстановление каталога из БД или первичная загрузка из внешнего источника;
   - worker обновления позиций каждые `2s`;
   - worker refresh из N2YO каждые `2h`, если задан API key.
 - `backend/internal/satellite/service.go`
-  - in-memory каталог спутников;
+  - live in-memory каталог для SGP4 и WebSocket;
   - фильтрация;
   - обновление текущих позиций;
   - получение позиций для произвольного времени;
-  - хранение `catalog_status` и `filter_facets`.
+  - синхронизация каталога и позиций с PostgreSQL.
+- `backend/internal/store/`
+  - PostgreSQL pool и runtime-конфигурация;
+  - embedded SQL migrations;
+  - repository для каталога, `catalog_status` и истории импортов.
 - `backend/internal/satellite/propagator.go`
   - SGP4/SDP4 propagation;
   - вычисление орбитального типа;
@@ -198,13 +204,16 @@ N2YO / CelesTrak / local TLE / uploaded TLE / preset
       backend/internal/n2yo + tle
                 │
                 v
-      SatelliteService (in-memory catalog)
+      PostgreSQL catalog store
+                │
+                v
+      SatelliteService (live in-memory state)
                 │
       ┌─────────┼─────────┐
       │         │         │
       v         v         v
   /api/*   2s position   2h N2YO
-           refresh       refresh
+   (DB)     sync DB      refresh
       │         │
       │         v
       │    /ws/positions
@@ -220,7 +229,7 @@ Cesium 3D / 2GIS 2D / panels / notifications / comparison
 
 ### Backend
 
-- Go `1.22`
+- Go `1.25`
 - Fiber `v2`
 - `go-satellite` для SGP4/SDP4
 - `zerolog`
@@ -248,7 +257,7 @@ Cesium 3D / 2GIS 2D / panels / notifications / comparison
 
 | Метод | Путь | Описание |
 |------|------|----------|
-| `GET` | `/health` | health-check backend |
+| `GET` | `/health` | health-check backend + PostgreSQL |
 
 ### Каталог и позиции
 
@@ -364,7 +373,7 @@ Cesium 3D / 2GIS 2D / panels / notifications / comparison
 
 - `POST /api/tle/upload` принимает `text/plain`, а не `multipart/form-data`.
 - Frontend позволяет выбрать файл, но перед отправкой читает его содержимое и отправляет как raw text.
-- Ручная загрузка TLE и загрузка пресета расширяют текущий in-memory каталог backend, а не заменяют его.
+- Ручная загрузка TLE и загрузка пресета расширяют текущий каталог в PostgreSQL и переживают рестарт backend.
 
 ### WebSocket
 
@@ -404,7 +413,7 @@ Cesium 3D / 2GIS 2D / panels / notifications / comparison
 ### Требования
 
 - Docker и Docker Compose plugin, либо
-- Go `1.22+`, Node.js `20+`, npm `10+`.
+- Go `1.25+`, Node.js `20+`, npm `10+`.
 
 ### Docker Compose
 
@@ -432,6 +441,7 @@ docker compose up --build
 
 Важно:
 
+- `docker compose` поднимает отдельный сервис `postgres` и сохраняет данные в volume `postgres-data`;
 - для frontend значения `NEXT_PUBLIC_*` используются на этапе build;
 - после изменения `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_CESIUM_TOKEN` или `NEXT_PUBLIC_2GIS_MAPGL_KEY` контейнер frontend нужно пересобрать;
 - самый простой способ: снова выполнить `docker compose up --build`.
@@ -439,6 +449,14 @@ docker compose up --build
 ### Локально без Docker
 
 #### 1. Backend
+
+Нужен доступный PostgreSQL. Быстрый вариант для локальной разработки:
+
+```bash
+docker compose up -d postgres
+```
+
+Дальше:
 
 ```bash
 cd backend
@@ -450,7 +468,7 @@ go run cmd/server/main.go
 
 ```bash
 cd backend
-PORT=8080 N2YO_API_KEY=your_n2yo_key TLE_DATA_PATH=data/stations.tle go run cmd/server/main.go
+PORT=8080 DATABASE_URL=postgres://sputnikx:sputnikx@127.0.0.1:5432/sputnikx?sslmode=disable N2YO_API_KEY=your_n2yo_key TLE_DATA_PATH=data/stations.tle go run cmd/server/main.go
 ```
 
 #### 2. Frontend
@@ -482,6 +500,13 @@ npm run dev
 | Переменная | Значение по умолчанию | Описание |
 |-----------|------------------------|----------|
 | `PORT` | `8080` | порт backend |
+| `DATABASE_URL` | `postgres://sputnikx:sputnikx@postgres:5432/sputnikx?sslmode=disable` | полная DSN-строка PostgreSQL |
+| `POSTGRES_HOST` | `postgres` | host PostgreSQL, используется если `DATABASE_URL` не задан |
+| `POSTGRES_PORT` | `5432` | порт PostgreSQL |
+| `POSTGRES_DB` | `sputnikx` | имя БД |
+| `POSTGRES_USER` | `sputnikx` | пользователь БД |
+| `POSTGRES_PASSWORD` | `sputnikx` | пароль БД |
+| `POSTGRES_SSLMODE` | `disable` | SSL mode для PostgreSQL |
 | `N2YO_API_KEY` | пусто | ключ N2YO REST API |
 | `TLE_DATA_PATH` | `data/stations.tle` | путь к локальному TLE-файлу |
 
@@ -503,8 +528,8 @@ npm run dev
 
 ## Хранение состояния
 
-- Backend не использует БД: каталог, позиции и источник данных живут только в памяти процесса.
-- После рестарта backend ручные TLE-загрузки и загруженные пресеты теряются.
+- Backend использует PostgreSQL: активный каталог, `catalog_status`, история импортов и последние вычисленные позиции хранятся в БД.
+- После рестарта backend каталог восстанавливается из PostgreSQL до следующего refresh или ручного импорта.
 - Frontend-уведомления хранятся в браузере через `localStorage`.
 
 ## Актуальные нюансы и ограничения
@@ -516,7 +541,7 @@ npm run dev
 - Уведомления о сближениях работают только в режиме реального времени; при симуляции времени polling приостанавливается.
 - Панель «Что над головой» использует клиентский расчёт look-angle (приближённый); для точных данных предпочтительнее серверный SGP4.
 - Сравнение группировок строится автоматически по названиям серий и ограничено `4` выбранными группами одновременно.
-- Ручные загрузки TLE и пресетов расширяют текущий каталог, но refresh из N2YO полностью заменяет каталог свежими данными.
+- Ручные загрузки TLE и пресетов расширяют текущий каталог в PostgreSQL, а refresh из N2YO полностью заменяет активный каталог свежими данными.
 - В репозитории пока нет отдельного набора unit/integration tests; основная проверка сейчас это `go test ./...` и production build frontend.
 
 ## Полезные команды

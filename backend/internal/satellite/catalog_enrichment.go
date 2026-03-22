@@ -1,6 +1,7 @@
 package satellite
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -98,7 +99,7 @@ func (s *SatelliteService) buildSatellites(
 		}
 
 		sat := &models.Satellite{
-			ID:          uuid.New().String(),
+			ID:          stableSatelliteID(noradID),
 			Name:        td.Name,
 			NoradID:     noradID,
 			Country:     country,
@@ -137,4 +138,11 @@ func (s *SatelliteService) buildSatellites(
 		Msg("Satellite country enrichment applied")
 
 	return satellites, loaded
+}
+
+func stableSatelliteID(noradID int) string {
+	return uuid.NewSHA1(
+		uuid.NameSpaceOID,
+		[]byte(fmt.Sprintf("sputnikx:norad:%d", noradID)),
+	).String()
 }

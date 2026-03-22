@@ -8,6 +8,9 @@ const (
 	CatalogSourceLocalTLE    = "local_tle"
 	CatalogSourceUploadedTLE = "uploaded_tle"
 	CatalogSourcePreset      = "preset"
+
+	CatalogImportModeMerge   = "merge"
+	CatalogImportModeReplace = "replace"
 )
 
 // TLEData holds the raw two-line element set for a satellite.
@@ -56,6 +59,15 @@ type SatellitePosition struct {
 	Latitude  float64 `json:"lat"`
 	Longitude float64 `json:"lng"`
 	Altitude  float64 `json:"alt"`
+}
+
+// SatellitePositionUpdate is a lightweight snapshot used to persist live positions.
+type SatellitePositionUpdate struct {
+	ID        string
+	Latitude  float64
+	Longitude float64
+	Altitude  float64
+	Velocity  float64
 }
 
 // OrbitPoint is a single point along an orbital track.
