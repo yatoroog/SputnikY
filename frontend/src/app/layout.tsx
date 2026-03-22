@@ -1,9 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'SputnikX \u2014 \u041C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433 \u0441\u043F\u0443\u0442\u043D\u0438\u043A\u043E\u0432',
   description: '\u041F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0430 \u043E\u0442\u0441\u043B\u0435\u0436\u0438\u0432\u0430\u043D\u0438\u044F \u0441\u043F\u0443\u0442\u043D\u0438\u043A\u043E\u0432 \u0432 \u0440\u0435\u0430\u043B\u044C\u043D\u043E\u043C \u0432\u0440\u0435\u043C\u0435\u043D\u0438',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -14,6 +21,43 @@ export default function RootLayout({
   return (
     <html lang="ru" className="dark">
       <body className="bg-cosmos-bg text-[#eef2ff] antialiased">
+        <Script id="mobile-debug-monitor" strategy="beforeInteractive">
+          {`
+            (function () {
+              try {
+                var panel = document.createElement('div');
+                panel.id = 'mobile-debug-monitor';
+                panel.style.position = 'fixed';
+                panel.style.left = '12px';
+                panel.style.bottom = '12px';
+                panel.style.zIndex = '2147483647';
+                panel.style.maxWidth = 'calc(100vw - 24px)';
+                panel.style.padding = '8px 10px';
+                panel.style.borderRadius = '10px';
+                panel.style.background = 'rgba(0,0,0,0.85)';
+                panel.style.color = '#fff';
+                panel.style.font = '12px/1.4 monospace';
+                panel.style.whiteSpace = 'pre-wrap';
+                panel.style.wordBreak = 'break-word';
+                panel.textContent = 'inline js: ok';
+                document.addEventListener('DOMContentLoaded', function () {
+                  document.body.appendChild(panel);
+                });
+
+                window.addEventListener('error', function (event) {
+                  panel.textContent = 'inline js: ok\\nerror: ' + (event.message || 'unknown');
+                });
+
+                window.addEventListener('unhandledrejection', function (event) {
+                  var reason = event && event.reason;
+                  panel.textContent =
+                    'inline js: ok\\nrejection: ' +
+                    (reason && reason.message ? reason.message : String(reason));
+                });
+              } catch (e) {}
+            })();
+          `}
+        </Script>
         {/* SVG filters for liquid glass distortion */}
         <svg className="fixed w-0 h-0" aria-hidden="true">
           <defs>

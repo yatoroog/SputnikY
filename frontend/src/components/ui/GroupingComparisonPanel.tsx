@@ -127,14 +127,14 @@ interface StatCardProps {
 function StatCard({ label, value, accentColor }: StatCardProps) {
   return (
     <div
-      className="relative overflow-hidden rounded-[22px] border border-white/10 bg-[#0f1729]/82 px-4 py-4"
+      className="relative overflow-hidden rounded-[18px] border border-white/10 bg-[#0f1729]/82 px-3 py-3 sm:rounded-[22px] sm:px-4 sm:py-4"
       style={{
         backgroundImage: `radial-gradient(circle at top right, ${accentColor}22, transparent 45%)`,
       }}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/14 to-transparent" />
       <p className="text-[11px] uppercase tracking-[0.2em] text-[#637196]">{label}</p>
-      <p className="mt-3 text-lg font-semibold leading-snug text-white">{value}</p>
+      <p className="mt-2 text-sm font-semibold leading-snug text-white sm:mt-3 sm:text-lg">{value}</p>
     </div>
   );
 }
@@ -184,32 +184,32 @@ export default function GroupingComparisonPanel() {
 
   return (
     <div
-      className="fixed inset-0 z-30 overflow-y-auto bg-[rgba(2,6,23,0.74)] px-4 py-4 backdrop-blur-[5px] md:px-6 md:py-6"
+      className="fixed inset-0 z-30 overflow-y-auto bg-[rgba(2,6,23,0.74)] px-2 py-2 backdrop-blur-[5px] sm:px-4 sm:py-4 md:px-6 md:py-6"
       onClick={closeComparison}
     >
       <div className="mx-auto flex min-h-full w-full max-w-[1660px] items-start justify-center">
         <div
-          className="panel-base relative w-full overflow-hidden rounded-[36px] border-white/12 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.08),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.09),transparent_30%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(7,10,18,0.94))] shadow-[0_24px_120px_rgba(0,0,0,0.5)]"
+          className="panel-base relative w-full overflow-hidden rounded-[24px] border-white/12 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.08),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.09),transparent_30%),linear-gradient(180deg,rgba(8,12,22,0.96),rgba(7,10,18,0.94))] shadow-[0_24px_120px_rgba(0,0,0,0.5)] sm:rounded-[36px]"
           onClick={(event) => event.stopPropagation()}
         >
           <div className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
           <div className="pointer-events-none absolute -right-20 top-0 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
           <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
 
-          <div className="relative max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain md:max-h-[calc(100vh-3rem)]">
+          <div className="relative max-h-[calc(100vh-1rem)] overflow-y-auto overscroll-contain sm:max-h-[calc(100vh-2rem)] md:max-h-[calc(100vh-3rem)]">
             <div className="sticky top-0 z-30 border-b border-white/8 bg-[linear-gradient(180deg,rgba(10,15,27,0.96),rgba(10,15,27,0.82))] backdrop-blur-xl">
-              <div className="px-6 pb-5 pt-6 md:px-8 md:pt-7">
-                <div className="flex items-start justify-between gap-4">
+              <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-6 md:px-8 md:pt-7">
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-accent-cyan/10 shadow-[0_0_36px_rgba(6,182,212,0.14)]">
-                        <GitCompareArrows size={24} className="text-accent-cyan" />
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[18px] bg-accent-cyan/10 shadow-[0_0_36px_rgba(6,182,212,0.14)] sm:h-14 sm:w-14 sm:rounded-2xl">
+                        <GitCompareArrows size={18} className="text-accent-cyan sm:h-6 sm:w-6" />
                       </div>
                       <div className="min-w-0">
-                        <h2 className="truncate text-[28px] font-semibold leading-none text-white md:text-[34px]">
+                        <h2 className="truncate text-lg font-semibold leading-none text-white sm:text-[28px] md:text-[34px]">
                           Сравнение группировок
                         </h2>
-                        <p className="mt-3 max-w-3xl text-base leading-relaxed text-[#94a3c0] md:text-lg">
+                        <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[#94a3c0] sm:mt-3 sm:text-base md:text-lg">
                           Большое модальное окно с агрегатами, чистой таблицей сравнения и
                           подробным списком спутников выбранной активной группы.
                         </p>
@@ -219,14 +219,14 @@ export default function GroupingComparisonPanel() {
 
                   <button
                     onClick={closeComparison}
-                    className="premium-icon-button flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[22px] text-[#637196] transition-colors hover:text-white"
+                    className="premium-icon-button flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[18px] text-[#637196] transition-colors hover:text-white sm:h-14 sm:w-14 sm:rounded-[22px]"
                     title="Закрыть сравнение"
                   >
-                    <X size={24} />
+                    <X size={18} className="sm:h-6 sm:w-6" />
                   </button>
                 </div>
 
-                <div className="mt-5 flex flex-wrap items-center gap-3">
+                <div className="mt-4 flex flex-wrap items-center gap-2 sm:mt-5 sm:gap-3">
                   {selectedGroupings.map((grouping) => (
                     <GroupingChip
                       key={grouping.id}
@@ -240,32 +240,32 @@ export default function GroupingComparisonPanel() {
               </div>
             </div>
 
-            <div className="space-y-6 px-6 pb-6 pt-6 md:px-8 md:pb-8">
-              <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,22,38,0.82),rgba(8,12,22,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                <div className="flex flex-col gap-3 border-b border-white/8 px-5 py-5 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-4 px-3 pb-3 pt-3 sm:space-y-6 sm:px-6 sm:pb-6 sm:pt-6 md:px-8 md:pb-8">
+              <section className="overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,22,38,0.82),rgba(8,12,22,0.86))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:rounded-[30px]">
+                <div className="flex flex-col gap-2 border-b border-white/8 px-3 py-3 sm:gap-3 sm:px-5 sm:py-5 md:flex-row md:items-end md:justify-between">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.24em] text-[#637196]">
                       Агрегированное сравнение
                     </p>
-                    <h3 className="mt-2 text-xl font-semibold text-white">
+                    <h3 className="mt-1.5 text-base font-semibold text-white sm:mt-2 sm:text-xl">
                       Ключевые метрики по выбранным группировкам
                     </h3>
                   </div>
-                  <p className="text-sm text-[#7f8ca7]">
+                  <p className="text-xs text-[#7f8ca7] sm:text-sm">
                     Сводка занимает всю ширину окна и прокручивается только по горизонтали при
                     необходимости.
                   </p>
                 </div>
 
-                <div className="overflow-x-auto px-4 pb-4 pt-4 md:px-5 md:pb-5">
-                  <div className="overflow-hidden rounded-[24px] border border-white/8 bg-white/[0.03]">
+                <div className="overflow-x-auto px-2 pb-2 pt-2 sm:px-4 sm:pb-4 sm:pt-4 md:px-5 md:pb-5">
+                  <div className="overflow-hidden rounded-[18px] border border-white/8 bg-white/[0.03] sm:rounded-[24px]">
                     <div
-                      className="grid min-w-[980px] w-full gap-px bg-white/[0.06]"
+                      className="grid min-w-[720px] w-full gap-px bg-white/[0.06] sm:min-w-[980px]"
                       style={{
-                        gridTemplateColumns: `minmax(230px,0.9fr) repeat(${selectedGroupings.length}, minmax(250px,1fr))`,
+                        gridTemplateColumns: `minmax(170px,0.9fr) repeat(${selectedGroupings.length}, minmax(180px,1fr))`,
                       }}
                     >
-                      <div className="bg-[#10182b]/96 px-5 py-5 text-left text-[11px] font-medium uppercase tracking-[0.24em] text-[#637196]">
+                      <div className="bg-[#10182b]/96 px-3 py-3 text-left text-[10px] font-medium uppercase tracking-[0.18em] text-[#637196] sm:px-5 sm:py-5 sm:text-[11px] sm:tracking-[0.24em]">
                         Метрика
                       </div>
 
@@ -275,21 +275,21 @@ export default function GroupingComparisonPanel() {
                         return (
                           <div
                             key={grouping.id}
-                            className="bg-[#10182b]/96 px-5 py-5"
+                            className="bg-[#10182b]/96 px-3 py-3 sm:px-5 sm:py-5"
                             style={{
                               backgroundImage: `radial-gradient(circle at top left, ${orbitColor}1f, transparent 45%)`,
                             }}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 sm:gap-3">
                               <div
-                                className="h-3 w-3 rounded-full shadow-[0_0_14px_currentColor]"
+                                className="h-2.5 w-2.5 rounded-full shadow-[0_0_14px_currentColor] sm:h-3 sm:w-3"
                                 style={{ backgroundColor: orbitColor }}
                               />
                               <div>
-                                <p className="text-[15px] font-semibold text-white">
+                                <p className="text-[13px] font-semibold text-white sm:text-[15px]">
                                   {grouping.label}
                                 </p>
-                                <p className="mt-1 text-xs text-[#7f8ca7]">
+                                <p className="mt-0.5 text-[11px] text-[#7f8ca7] sm:mt-1 sm:text-xs">
                                   {grouping.satelliteCount} спутн.
                                 </p>
                               </div>
@@ -302,7 +302,7 @@ export default function GroupingComparisonPanel() {
                         <div key={row.id} className="contents">
                           <div
                             className={cn(
-                              'px-5 py-4 text-sm font-medium text-[#9fb0d4]',
+                              'px-3 py-3 text-xs font-medium text-[#9fb0d4] sm:px-5 sm:py-4 sm:text-sm',
                               rowIndex % 2 === 0 ? 'bg-[#0d1324]' : 'bg-[#0a101d]'
                             )}
                           >
@@ -313,7 +313,7 @@ export default function GroupingComparisonPanel() {
                             <div
                               key={`${grouping.id}-${row.id}`}
                               className={cn(
-                                'px-5 py-4 text-sm leading-relaxed text-white',
+                                'px-3 py-3 text-xs leading-relaxed text-white sm:px-5 sm:py-4 sm:text-sm',
                                 rowIndex % 2 === 0 ? 'bg-[#0d1324]' : 'bg-[#0a101d]'
                               )}
                             >
@@ -327,23 +327,23 @@ export default function GroupingComparisonPanel() {
                 </div>
               </section>
 
-              <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,22,38,0.84),rgba(8,12,22,0.88))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+              <section className="overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,22,38,0.84),rgba(8,12,22,0.88))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:rounded-[30px]">
                 <div
-                  className="border-b border-white/8 px-5 py-6 md:px-6"
+                  className="border-b border-white/8 px-3 py-4 sm:px-5 sm:py-6 md:px-6"
                   style={{
                     backgroundImage: `radial-gradient(circle at top right, ${activeColor}1f, transparent 38%)`,
                   }}
                 >
                   <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-3">
-                        <Layers3 size={22} style={{ color: activeColor }} />
-                        <h3 className="truncate text-[28px] font-semibold text-white md:text-[34px]">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <Layers3 size={18} className="sm:h-[22px] sm:w-[22px]" style={{ color: activeColor }} />
+                        <h3 className="truncate text-lg font-semibold text-white sm:text-[28px] md:text-[34px]">
                           {activeGrouping.label}
                         </h3>
                       </div>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[#94a3c0]">
+                      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-[#94a3c0] sm:mt-4 sm:gap-x-3 sm:gap-y-2 sm:text-sm">
                         <span>{formatGroupingBreakdown(activeGrouping.orbitTypeBreakdown, 3)}</span>
                         {activeGrouping.countryBreakdown.length > 0 && (
                           <>
@@ -360,13 +360,13 @@ export default function GroupingComparisonPanel() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-[#94a3c0]">
+                    <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-[#94a3c0] sm:px-4 sm:py-2.5 sm:text-sm">
                       <Radar size={16} className="text-accent-cyan" />
                       Клик по спутнику подсветит его на карте
                     </div>
                   </div>
 
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <StatCard
                       label="Спутников"
                       value={String(activeGrouping.satelliteCount)}
@@ -391,8 +391,8 @@ export default function GroupingComparisonPanel() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <div className="min-w-[1180px]">
-                    <div className="grid grid-cols-[minmax(320px,2.4fr)_minmax(180px,1.05fr)_120px_140px_140px_120px] border-b border-white/8 bg-[#0f1729]/92 px-5 py-4 text-[11px] font-medium uppercase tracking-[0.22em] text-[#637196]">
+                  <div className="min-w-[860px] sm:min-w-[1180px]">
+                    <div className="grid grid-cols-[minmax(240px,2fr)_minmax(150px,1fr)_100px_110px_110px_100px] border-b border-white/8 bg-[#0f1729]/92 px-3 py-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[#637196] sm:grid-cols-[minmax(320px,2.4fr)_minmax(180px,1.05fr)_120px_140px_140px_120px] sm:px-5 sm:py-4 sm:text-[11px] sm:tracking-[0.22em]">
                       <span>Спутник</span>
                       <span>Орбита</span>
                       <span>Высота</span>
@@ -407,24 +407,24 @@ export default function GroupingComparisonPanel() {
                           key={satellite.id}
                           onClick={() => selectSatellite(satellite)}
                           className={cn(
-                            'grid w-full grid-cols-[minmax(320px,2.4fr)_minmax(180px,1.05fr)_120px_140px_140px_120px] items-start gap-0 px-5 py-5 text-left transition-all duration-200 hover:bg-white/[0.04]',
+                            'grid w-full grid-cols-[minmax(240px,2fr)_minmax(150px,1fr)_100px_110px_110px_100px] items-start gap-0 px-3 py-3 text-left transition-all duration-200 hover:bg-white/[0.04] sm:grid-cols-[minmax(320px,2.4fr)_minmax(180px,1.05fr)_120px_140px_140px_120px] sm:px-5 sm:py-5',
                             index % 2 === 0 ? 'bg-white/[0.01]' : 'bg-white/[0.025]'
                           )}
                         >
-                          <div className="min-w-0 pr-6">
-                            <p className="truncate text-[18px] font-medium text-[#eef2ff]">
+                          <div className="min-w-0 pr-3 sm:pr-6">
+                            <p className="truncate text-sm font-medium text-[#eef2ff] sm:text-[18px]">
                               {satellite.name}
                             </p>
-                            <p className="mt-2 text-sm text-[#637196]">
+                            <p className="mt-1 text-xs text-[#637196] sm:mt-2 sm:text-sm">
                               NORAD {satellite.noradId}
                               {satellite.country ? ` • ${satellite.country}` : ''}
                               {satellite.purpose ? ` • ${satellite.purpose}` : ''}
                             </p>
                           </div>
 
-                          <div className="pr-5">
+                          <div className="pr-3 sm:pr-5">
                             <span
-                              className="inline-flex rounded-full border px-3 py-1 text-sm font-medium"
+                              className="inline-flex rounded-full border px-2 py-1 text-xs font-medium sm:px-3 sm:text-sm"
                               style={{
                                 color: getOrbitTypeColor(satellite.orbitType),
                                 borderColor: `${getOrbitTypeColor(satellite.orbitType)}30`,
@@ -435,16 +435,16 @@ export default function GroupingComparisonPanel() {
                             </span>
                           </div>
 
-                          <span className="text-base font-medium text-[#eef2ff]">
+                          <span className="text-xs font-medium text-[#eef2ff] sm:text-base">
                             {formatAltitude(satellite.altitude)}
                           </span>
-                          <span className="text-base font-medium text-[#eef2ff]">
+                          <span className="text-xs font-medium text-[#eef2ff] sm:text-base">
                             {formatDegree(satellite.inclination)}
                           </span>
-                          <span className="text-base font-medium text-[#eef2ff]">
+                          <span className="text-xs font-medium text-[#eef2ff] sm:text-base">
                             {formatPeriod(satellite.period)}
                           </span>
-                          <span className="text-base font-medium text-[#eef2ff]">
+                          <span className="text-xs font-medium text-[#eef2ff] sm:text-base">
                             {formatVelocity(satellite.velocity)}
                           </span>
                         </button>

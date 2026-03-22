@@ -7,11 +7,28 @@ import { isRenderableAltitudeKm } from '@/lib/utils';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
-const WS_BASE_URL =
-  process.env.NEXT_PUBLIC_WS_URL ||
-  process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, 'ws') ||
-  'ws://localhost:8080';
 const MAX_RECONNECT_DELAY = 30000;
+
+function getWebSocketBaseUrl(): string {
+  const configuredUrl =
+    process.env.NEXT_PUBLIC_WS_URL ||
+    process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, 'ws') ||
+    'ws://localhost:8080';
+
+  if (typeof window === 'undefined') {
+    return configuredUrl;
+  }
+
+  try {
+    const url = new URL(configuredUrl);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      url.hostname = window.location.hostname;
+    }
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return configuredUrl;
+  }
+}
 
 function isValidPositionUpdate(value: unknown): value is SatellitePosition {
   if (!value || typeof value !== 'object') {
@@ -55,7 +72,7 @@ export function useWebSocket(enabled: boolean = true) {
     statusRef.current = 'connecting';
 
     try {
-      const ws = new WebSocket(`${WS_BASE_URL}/ws/positions`);
+      const ws = new WebSocket(`${getWebSocketBaseUrl()}/ws/positions`);
       wsRef.current = ws;
 
       ws.onopen = () => {
