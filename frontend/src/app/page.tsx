@@ -22,7 +22,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }));
 
   return (
-    <div className="h-screen w-screen bg-cosmos-bg">
+    <div className="h-dvh w-screen bg-cosmos-bg">
       {useSafeMobile ? (
         <SafeMobileApp
           initialSatellites={initialCatalog.satellites}

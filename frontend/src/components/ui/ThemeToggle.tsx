@@ -10,7 +10,7 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="panel-base flex items-center gap-2 px-3 py-2.5 rounded-[20px] transition-all duration-300 hover:bg-white/[0.08]"
+      className="premium-icon-button flex items-center gap-1.5 px-2 py-1.5 rounded-[16px] transition-all duration-300"
       title={isDark ? 'Светлая тема' : 'Тёмная тема'}
     >
       <div className="relative w-10 h-5">

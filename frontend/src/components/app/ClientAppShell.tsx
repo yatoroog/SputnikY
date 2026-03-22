@@ -110,6 +110,7 @@ export default function ClientAppShell({
   const [isMobileDetailsOpen, setIsMobileDetailsOpen] = useState(false);
   const [isMobileDetailsMinimized, setIsMobileDetailsMinimized] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [viewportReady, setViewportReady] = useState(false);
   const [heatmapVisible, setHeatmapVisible] = useState(false);
   const hadMobileDetailsTargetRef = useRef(false);
 
@@ -132,10 +133,13 @@ export default function ClientAppShell({
     const applyViewport = () => {
       const mobile = window.innerWidth <= 1023;
       setIsMobileViewport(mobile);
-      setViewMode((current) => (mobile && current === '3d' ? '2d' : current));
     };
 
-    applyViewport();
+    const mobile = window.innerWidth <= 1023;
+    setIsMobileViewport(mobile);
+    if (mobile) setViewMode('2d');
+    setViewportReady(true);
+
     window.addEventListener('resize', applyViewport);
     window.addEventListener('orientationchange', applyViewport);
 
@@ -181,12 +185,19 @@ export default function ClientAppShell({
 
   return (
     <div
-      className="relative isolate h-screen w-screen overflow-hidden bg-cosmos-bg"
+      className="relative isolate h-dvh w-screen overflow-hidden bg-cosmos-bg"
       data-view={viewMode}
       data-theme={isDark ? 'dark' : 'light'}
     >
       <div className="absolute inset-0 z-0">
-        {viewMode === '3d' ? (
+        {!viewportReady ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-cosmos-bg">
+            <div className="flex flex-col items-center gap-4">
+              <div className="h-12 w-12 animate-spin rounded-full border-2 border-accent-cyan/50 border-t-transparent" />
+              <p className="text-sm text-[#94a3c0]">Загрузка...</p>
+            </div>
+          </div>
+        ) : viewMode === '3d' ? (
           <CesiumGlobe satellites={satellites} selectedSatellite={selectedSatellite} />
         ) : (
           <Map2D satellites={satellites} selectedSatellite={selectedSatellite} />
@@ -233,7 +244,6 @@ export default function ClientAppShell({
                 viewMode={viewMode}
                 onChange={setViewMode}
                 compact
-                disable3d={isMobileViewport}
               />
             </div>
           </div>
@@ -266,8 +276,8 @@ export default function ClientAppShell({
 
       {(!isMobileViewport || !isMobileDetailsOpen) && (
         <div
-          className="pointer-events-none absolute bottom-3 left-1/2 z-50 w-[min(680px,calc(100vw-0.75rem))] -translate-x-1/2 px-1.5 lg:bottom-5 lg:z-10 lg:w-auto lg:px-0"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0px)' }}
+          className="pointer-events-none absolute bottom-5 left-1/2 z-50 w-[min(680px,calc(100vw-0.75rem))] -translate-x-1/2 px-1.5 lg:bottom-5 lg:z-10 lg:w-auto lg:px-0"
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
         >
           <div className="pointer-events-auto scale-[0.9] origin-bottom sm:scale-[0.94] lg:scale-100">
             <TimelineControl />
