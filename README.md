@@ -443,6 +443,7 @@ docker compose up --build
 
 - `docker compose` поднимает отдельный сервис `postgres` и сохраняет данные в volume `postgres-data`;
 - для frontend значения `NEXT_PUBLIC_*` используются на этапе build;
+- `INTERNAL_API_URL` используется только server-side proxy внутри контейнера frontend и по умолчанию указывает на `http://backend:8080`;
 - после изменения `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_CESIUM_TOKEN` или `NEXT_PUBLIC_2GIS_MAPGL_KEY` контейнер frontend нужно пересобрать;
 - самый простой способ: снова выполнить `docker compose up --build`.
 
@@ -514,6 +515,7 @@ npm run dev
 
 | Переменная | Значение по умолчанию | Описание |
 |-----------|------------------------|----------|
+| `INTERNAL_API_URL` | `http://backend:8080` | внутренний base URL backend для server-side proxy в Docker |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | base URL backend API |
 | `NEXT_PUBLIC_WS_URL` | `ws://localhost:8080` | base URL для WebSocket |
 | `NEXT_PUBLIC_CESIUM_TOKEN` | пусто | опциональный Cesium Ion token |
@@ -522,6 +524,7 @@ npm run dev
 Примечания:
 
 - все переменные с префиксом `NEXT_PUBLIC_` попадают в клиентский bundle и не являются секретами;
+- `INTERNAL_API_URL` не попадает в клиентский bundle и нужен только для server-side запросов Next.js;
 - `NEXT_PUBLIC_CESIUM_TOKEN` можно не задавать, 3D-режим всё равно работает на локальных ассетах;
 - без `NEXT_PUBLIC_2GIS_MAPGL_KEY` 2D-режим не инициализируется и показывает понятное сообщение об ошибке;
 - `.env`, `.env.local` и `.env.*.local` не должны коммититься и уже игнорируются git.
